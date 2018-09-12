@@ -519,7 +519,7 @@ struct subscriber_t
 {
     int fd;			/* client file descriptor. -1 if unused */
     time_t active;		/* when subscriber last polled for data */
-    struct policy_t policy;	/* configurable bits */
+    struct gps_policy_t policy;	/* configurable bits */
     pthread_mutex_t mutex;	/* serialize access to fd */
 };
 
