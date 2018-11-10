@@ -813,6 +813,7 @@ static gps_mask_t ubx_rxm_rawx(struct gps_device_t *session,
     int8_t leapS;
     uint8_t numMeas;
     uint8_t recStat;
+    int i;
 
     if (16 > data_len) {
 	gpsd_log(&session->context->errout, LOG_WARN,
@@ -830,7 +831,7 @@ static gps_mask_t ubx_rxm_rawx(struct gps_device_t *session,
 	     "UBX_RXM_RAWX: rcvTow %f week %u leapS %d numMeas %u recStat %d\n",
 	     rcvTow, week, leapS, numMeas, recStat);
 
-    for (int i = 0; i < numMeas; i++) {
+    for (i = 0; i < numMeas; i++) {
         int off = 32 * i;
         double prMes = getled64((const char *)buf, off + 16);
         double cpMes = getled64((const char *)buf, off + 24);
