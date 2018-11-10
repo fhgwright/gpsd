@@ -1,13 +1,15 @@
 #!/usr/bin/env python
 #
-# gpsfake -- test harness for gpsd
-#
-# Simulates one or more GPSes, playing back logfiles.
-# Most of the logic for this now lives in gps.fake,
-# factored out so we can write other test programs with it.
+'''
+gpsfake -- test harness for gpsd
+
+Simulates one or more GPSes, playing back logfiles.
+Most of the logic for this now lives in gps.fake,
+factored out so we can write other test programs with it.
+'''
 #
 # This file is Copyright (c) 2010 by the GPSD project
-# BSD terms apply: see the file COPYING in the distribution root for details.
+# SPDX-License-Identifier: BSD-2-clause
 
 # This code runs compatibly under Python 2 and 3.x for x >= 2.
 # Preserve this property!
@@ -23,6 +25,12 @@ import time
 
 import gps
 import gps.fake as gpsfake   # The "as" pacifies pychecker
+
+gps_version = '3.18'
+if gps.__version__ != gps_version:
+    sys.stderr.write("gpsfake: ERROR: need gps module version %s, got %s\n" %
+                     (gps_version, gps.__version__))
+    sys.exit(1)
 
 try:
     my_input = raw_input
@@ -53,6 +61,7 @@ class Baton(object):
         return
 
     def twirl(self, ch=None):
+        "Twirl the baton"
         if self.stream is None:
             return
         if os.isatty(self.stream.fileno()):
@@ -66,16 +75,18 @@ class Baton(object):
         self.count = self.count + 1
         return
 
-    def end(self, msg=None):
-        if msg is None:
-            msg = self.endmsg
+    def end(self, mesg=None):
+        "Write end message"
+        if mesg is None:
+            mesg = self.endmsg
         if self.stream:
             self.stream.write("...(%2.2f sec) %s.\n"
-                              % (time.time() - self.time, msg))
+                              % (time.time() - self.time, mesg))
         return
 
 
 def hexdump(s):
+    "Convert string to hex"
     rep = ""
     for c in s:
         rep += "%02x" % ord(c)
@@ -83,7 +94,8 @@ def hexdump(s):
 
 
 def fakehook(linenumber, fakegps):
-    if len(fakegps.testload.sentences) == 0:
+    "Do the real work"
+    if not fakegps.testload.sentences:
         sys.stderr.write("fakegps: no sentences in test load.\n")
         raise SystemExit(1)
     if linenumber % len(fakegps.testload.sentences) == 0:
@@ -111,10 +123,39 @@ def fakehook(linenumber, fakegps):
         baton.twirl()
     return True
 
+
 if __name__ == '__main__':
+    def usage():
+        "Print usage and exit"
+        sys.stderr.write("""usage: gpsfake [OPTIONS] logfile...
+    [-1]
+    [-b]
+    [-c cycle]
+    [-D debug]
+    [-g]
+    [-h]
+    [-i]
+    [-l]
+    [-m monitor]
+    [-n]
+    [-o options]
+    [-p]
+    [-P port]
+    [-q]
+    [-r initcmd]
+    [-S]
+    [-s speed]
+    [-t]
+    [-T]
+    [-v]
+    [-V]
+    [-x]
+""")
+        raise SystemExit(0)
+
     try:
         (options, arguments) = getopt.getopt(sys.argv[1:],
-                                             "1bc:D:ghilm:no:pP:qr:s:StTuvx")
+                                             "1bc:D:ghilm:no:pP:qr:s:StTuvxV")
     except getopt.GetoptError as msg:
         print("gpsfake: " + str(msg))
         raise SystemExit(1)
@@ -147,6 +188,8 @@ if __name__ == '__main__':
             doptions += " -D " + val
         elif switch == '-g':
             monitor = "xterm -e gdb -tui --args "
+        elif switch == '-h':
+            usage()
         elif switch == '-i':
             linedump = promptme = True
         elif switch == '-l':
@@ -155,8 +198,6 @@ if __name__ == '__main__':
             monitor = val + " "
         elif switch == '-n':
             doptions += " -n"
-        elif switch == '-x':
-            predump = True
         elif switch == '-o':
             doptions = val
         elif switch == '-p':
@@ -182,13 +223,11 @@ if __name__ == '__main__':
             udp = True
         elif switch == '-v':
             verbose += 1
-        elif switch == '-h':
-            sys.stderr.write("usage: gpsfake"
-                             " [-1] [-h] [-i] [-l] [-g] [-q] [-m monitor]"
-                             " [-D debug] [-n] [-o options] [-p]\n"
-                             "\t[-P port] [-r initcmd] [-t] [-T] [-v] [-x]"
-                             " [-s speed] [-S] [-c cycle] [-b] logfile...\n")
-            raise SystemExit(0)
+        elif switch == '-V':
+            sys.stderr.write("gpsfake: Version %s\n" % gps_version)
+            sys.exit(0)
+        elif switch == '-x':
+            predump = True
 
     try:
         pty.openpty()

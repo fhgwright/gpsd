@@ -1,6 +1,6 @@
 /*
  * This file is Copyright (c) 2010 by the GPSD project
- * BSD terms apply: see the file COPYING in the distribution root for details.
+ * SPDX-License-Identifier: BSD-2-clause
  */
 
 #include <stdio.h>
@@ -84,7 +84,7 @@ static void print_fix(struct gps_data_t *gpsdata, double time)
 
     (void)fprintf(logfile,"   <trkpt lat=\"%f\" lon=\"%f\">\n",
 		 gpsdata->fix.latitude, gpsdata->fix.longitude);
-    if ((isnan(gpsdata->fix.altitude) == 0))
+    if ((isfinite(gpsdata->fix.altitude) != 0))
 	(void)fprintf(logfile,"    <ele>%f</ele>\n", gpsdata->fix.altitude);
     (void)fprintf(logfile,"    <time>%s</time>\n",
 		 unix_to_iso8601(time, tbuf, sizeof(tbuf)));
@@ -108,11 +108,11 @@ static void print_fix(struct gps_data_t *gpsdata, double time)
 
     if ((gpsdata->fix.mode > MODE_NO_FIX) && (gpsdata->satellites_used > 0))
 	(void)fprintf(logfile,"    <sat>%d</sat>\n", gpsdata->satellites_used);
-    if (isnan(gpsdata->dop.hdop) == 0)
+    if (isfinite(gpsdata->dop.hdop) != 0)
 	(void)fprintf(logfile,"    <hdop>%.1f</hdop>\n", gpsdata->dop.hdop);
-    if (isnan(gpsdata->dop.vdop) == 0)
+    if (isfinite(gpsdata->dop.vdop) != 0)
 	(void)fprintf(logfile,"    <vdop>%.1f</vdop>\n", gpsdata->dop.vdop);
-    if (isnan(gpsdata->dop.pdop) == 0)
+    if (isfinite(gpsdata->dop.pdop) != 0)
 	(void)fprintf(logfile,"    <pdop>%.1f</pdop>\n", gpsdata->dop.pdop);
 
     (void)fprintf(logfile,"   </trkpt>\n");
@@ -233,7 +233,7 @@ int main(int argc, char **argv)
                 char   *fname = NULL;
                 time_t  t;
                 size_t  s = 0;
-                size_t fnamesize = strlen(optarg);
+                size_t fnamesize = strlen(optarg) + 1;
 
                 t = time(NULL);
                 while (s == 0) {
@@ -242,10 +242,14 @@ int main(int argc, char **argv)
 			syslog(LOG_ERR, "realloc failed.");
 			goto bailout;
 		    } else {
-			fnamesize += 1024;
 			fname = newfname;
 		    }
 		    s = strftime(fname, fnamesize-1, optarg, localtime(&t));
+		    if (!s) {
+                        /* expanded filename did not fit in string, try 
+                         * a bigger string */
+			fnamesize += 1024;
+                    }
                 }
                 fname[s] = '\0';;
                 logfile = fopen(fname, "w");

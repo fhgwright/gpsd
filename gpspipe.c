@@ -19,7 +19,7 @@
  * Original code by: Gary E. Miller <gem@rellim.com>.  Cleanup by ESR.
  *
  * This file is Copyright (c) 2010 by the GPSD project
- * BSD terms apply: see the file COPYING in the distribution root for details.
+ * SPDX-License-Identifier: BSD-2-clause
  *
  */
 
@@ -67,7 +67,9 @@ static void spinner(unsigned int, unsigned int);
 #define BAUDRATE B4800
 
 /* Serial port variables */
+#ifdef HAVE_TERMIOS_H
 static struct termios oldtio, newtio;
+#endif /* HAVE_TERMIOS_H */
 static int fd_out = 1;		/* output initially goes to standard output */
 static char serbuf[255];
 static int debug;
@@ -112,24 +114,25 @@ static void usage(void)
 {
     (void)fprintf(stderr,
 		  "Usage: gpspipe [OPTIONS] [server[:port[:device]]]\n\n"
+		  "-2 Set the split24 flag.\n"
 		  "-d Run as a daemon.\n"
-		  "-o [file] Write output to file.\n"
 		  "-h Show this help.\n"
+		  "-l Sleep for ten seconds before connecting to gpsd.\n"
+		  "-n [count] exit after count packets.\n"
+		  "-o [file] Write output to file.\n"
+		  "-P Include PPS JSON in NMEA or raw mode.\n"
+		  "-p Include profiling info in the JSON.\n"
 		  "-r Dump raw NMEA.\n"
 		  "-R Dump super-raw mode (GPS binary).\n"
-		  "-w Dump gpsd native data.\n"
-		  "-S Set scaled flag.\n"
-		  "-2 Set the split24 flag.\n"
-		  "-l Sleep for ten seconds before connecting to gpsd.\n"
-		  "-t Time stamp the data.\n"
-		  "-T [format] set the timestamp format (strftime(3)-like; implies '-t')\n"
-		  "-u usec time stamp, implies -t. Use -uu to output sec.usec\n"
 		  "-s [serial dev] emulate a 4800bps NMEA GPS on serial port (use with '-r').\n"
-		  "-n [count] exit after count packets.\n"
+		  "-S Set scaled flag.\n"
+		  "-T [format] set the timestamp format (strftime(3)-like; implies '-t')\n"
+		  "-t Time stamp the data.\n"
+		  "-u usec time stamp, implies -t. Use -uu to output sec.usec\n"
 		  "-v Print a little spinner.\n"
-		  "-p Include profiling info in the JSON.\n"
-		  "-P Include PPS JSON in NMEA or raw mode.\n"
 		  "-V Print version and exit.\n\n"
+		  "-w Dump gpsd native data.\n"
+		  "-x [seconds] Exit after given delay.\n"
 		  "You must specify one, or more, of -r, -R, or -w\n"
 		  "You must use -o if you use -d.\n");
 }
@@ -149,6 +152,7 @@ int main(int argc, char **argv)
     bool profile = false;
     int option_u = 0;                   // option to show uSeconds
     long count = -1;
+    time_t exit_timer = 0;
     int option;
     unsigned int vflag = 0, l = 0;
     FILE *fp;
@@ -160,7 +164,7 @@ int main(int argc, char **argv)
     char *outfile = NULL;
 
     flags = WATCH_ENABLE;
-    while ((option = getopt(argc, argv, "?dD:lhrRwStT:vVn:s:o:pPu2")) != -1) {
+    while ((option = getopt(argc, argv, "?dD:lhrRwStT:vVx:n:s:o:pPu2")) != -1) {
 	switch (option) {
 	case 'D':
 	    debug = atoi(optarg);
@@ -220,6 +224,9 @@ int main(int argc, char **argv)
 	    (void)fprintf(stderr, "%s: %s (revision %s)\n",
 			  argv[0], VERSION, REVISION);
 	    exit(EXIT_SUCCESS);
+	case 'x':
+	    exit_timer = time(NULL) + strtol(optarg, 0, 0);
+	    break;
 	case 's':
 	    serialport = optarg;
 	    break;
@@ -319,6 +326,8 @@ int main(int argc, char **argv)
 	FD_SET(gpsdata.gps_fd, &fds);
 	errno = 0;
 	r = select(gpsdata.gps_fd+1, &fds, NULL, NULL, &tv);
+	if (r >= 0 && exit_timer && time(NULL) >= exit_timer)
+		break;
 	if (r == -1 && errno != EINTR) {
 	    (void)fprintf(stderr, "gpspipe: select error %s(%d)\n",
 			  strerror(errno), errno);
@@ -341,7 +350,7 @@ int main(int argc, char **argv)
 		    serbuf[j++] = buf[i];
 		}
 		if (new_line && timestamp) {
-		    char tmstr_u[20];            // time with "usec" resolution
+		    char tmstr_u[40];            // time with "usec" resolution
 		    struct timespec now;
 		    struct tm *tmp_now;
 

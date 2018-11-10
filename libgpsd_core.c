@@ -7,7 +7,7 @@
  * entry point has been retained.)
  *
  * This file is Copyright (c) 2010 by the GPSD project
- * BSD terms apply: see the file COPYING in the distribution root for details.
+ * SPDX-License-Identifier: BSD-2-clause
  */
 
 #ifdef __linux__
@@ -326,6 +326,7 @@ void gpsd_init(struct gps_device_t *session, struct gps_context_t *context,
     gps_clear_fix(&session->newdata);
     gps_clear_fix(&session->oldfix);
     session->gpsdata.set = 0;
+    gps_clear_att(&session->gpsdata.attitude);
     gps_clear_dop(&session->gpsdata.dop);
     session->gpsdata.epe = NAN;
     session->mag_var = NAN;
@@ -420,6 +421,8 @@ void gpsd_clear(struct gps_device_t *session)
     lexer_init(&session->lexer);
     session->lexer.errout = session->context->errout;
     // session->gpsdata.online = 0;
+    gps_clear_att(&session->gpsdata.attitude);
+    gps_clear_dop(&session->gpsdata.dop);
     gps_clear_fix(&session->gpsdata.fix);
     session->gpsdata.status = STATUS_NO_FIX;
     session->gpsdata.separation = NAN;
@@ -724,22 +727,37 @@ static gps_mask_t fill_dop(const struct gpsd_errout_t *errout,
     memset(satpos, 0, sizeof(satpos));
 
     for (n = k = 0; k < gpsdata->satellites_visible; k++) {
-	if (gpsdata->skyview[k].used && !SBAS_PRN(gpsdata->skyview[k].PRN))
-	{
-	    const struct satellite_t *sp = &gpsdata->skyview[k];
-	    satpos[n][0] = sin(sp->azimuth * DEG_2_RAD)
-		* cos(sp->elevation * DEG_2_RAD);
-	    satpos[n][1] = cos(sp->azimuth * DEG_2_RAD)
-		* cos(sp->elevation * DEG_2_RAD);
-	    satpos[n][2] = sin(sp->elevation * DEG_2_RAD);
-	    satpos[n][3] = 1;
-	    gpsd_log(errout, LOG_INF, "PRN=%3d az=%3d el=%2d (%f, %f, %f)\n",
-		     gpsdata->skyview[k].PRN,
-		     gpsdata->skyview[k].azimuth,
-		     gpsdata->skyview[k].elevation,
-		     satpos[n][0], satpos[n][1], satpos[n][2]);
-	    n++;
-	}
+        if (!gpsdata->skyview[k].used) {
+             /* skip unused sats */
+             continue;
+        }
+        if (1 > gpsdata->skyview[k].PRN) {
+             /* skip bad PRN */
+             continue;
+        }
+        if (0 > gpsdata->skyview[k].azimuth ||
+             359 < gpsdata->skyview[k].azimuth) {
+             /* skip bad azimuth */
+             continue;
+        }
+        if (-90 > gpsdata->skyview[k].elevation ||
+             90 < gpsdata->skyview[k].elevation) {
+             /* skip bad elevation */
+             continue;
+        }
+        const struct satellite_t *sp = &gpsdata->skyview[k];
+        satpos[n][0] = sin(sp->azimuth * DEG_2_RAD)
+            * cos(sp->elevation * DEG_2_RAD);
+        satpos[n][1] = cos(sp->azimuth * DEG_2_RAD)
+            * cos(sp->elevation * DEG_2_RAD);
+        satpos[n][2] = sin(sp->elevation * DEG_2_RAD);
+        satpos[n][3] = 1;
+        gpsd_log(errout, LOG_INF, "PRN=%3d az=%3d el=%2d (%f, %f, %f)\n",
+                 gpsdata->skyview[k].PRN,
+                 gpsdata->skyview[k].azimuth,
+                 gpsdata->skyview[k].elevation,
+                 satpos[n][0], satpos[n][1], satpos[n][2]);
+        n++;
     }
     /* can't use gpsdata->satellites_used as that is a counter for xxGSA,
      * and gets cleared at odd times */
@@ -821,25 +839,27 @@ static gps_mask_t fill_dop(const struct gpsd_errout_t *errout,
 	     dop->vdop, pdop, dop->pdop, tdop, dop->tdop, gdop, dop->gdop);
 #endif
 
-    if (isnan(dop->xdop) != 0) {
+    /* Check to see which DOPs we already have.  Save values if no value
+     * from the GPS.  Do not overwrite values which came from the GPS */
+    if (isfinite(dop->xdop) == 0) {
 	dop->xdop = xdop;
     }
-    if (isnan(dop->ydop) != 0) {
+    if (isfinite(dop->ydop) == 0) {
 	dop->ydop = ydop;
     }
-    if (isnan(dop->hdop) != 0) {
+    if (isfinite(dop->hdop) == 0) {
 	dop->hdop = hdop;
     }
-    if (isnan(dop->vdop) != 0) {
+    if (isfinite(dop->vdop) == 0) {
 	dop->vdop = vdop;
     }
-    if (isnan(dop->pdop) != 0) {
+    if (isfinite(dop->pdop) == 0) {
 	dop->pdop = pdop;
     }
-    if (isnan(dop->tdop) != 0) {
+    if (isfinite(dop->tdop) == 0) {
 	dop->tdop = tdop;
     }
-    if (isnan(dop->gdop) != 0) {
+    if (isfinite(dop->gdop) == 0) {
 	dop->gdop = gdop;
     }
 
@@ -901,7 +921,7 @@ static void gpsd_error_model(struct gps_device_t *session,
      * and climb/sink in the simplest possible way.
      */
     if (fix->mode >= MODE_2D && oldfix->mode >= MODE_2D
-	&& isnan(fix->speed) != 0) {
+	&& isfinite(fix->speed) == 0) {
 	if (fix->time == oldfix->time)
 	    fix->speed = 0;
 	else
@@ -911,13 +931,13 @@ static void gpsd_error_model(struct gps_device_t *session,
 		/ (fix->time - oldfix->time);
     }
     if (fix->mode >= MODE_3D && oldfix->mode >= MODE_3D
-	&& isnan(fix->climb) != 0) {
+	&& isfinite(fix->climb) == 0) {
 	if (fix->time == oldfix->time)
 	    fix->climb = 0;
-	else if (isnan(fix->altitude) == 0 && isnan(oldfix->altitude) == 0) {
-	    fix->climb =
-		(fix->altitude - oldfix->altitude) / (fix->time -
-						      oldfix->time);
+	else if ((isfinite(fix->altitude) != 0 &&
+	         isfinite(oldfix->altitude) != 0)) {
+	    fix->climb = ((fix->altitude - oldfix->altitude) /
+	                  (fix->time - oldfix->time));
 	}
     }
 
@@ -935,21 +955,22 @@ static void gpsd_error_model(struct gps_device_t *session,
      * opened.  Also, some devices (notably plain NMEA0183 receivers)
      * never ship an indication of when they have valid leap second.
      */
-    if (isnan(fix->time) == 0 && isnan(fix->ept) != 0)
+    if (isfinite(fix->time) != 0 && isfinite(fix->ept) == 0)
 	fix->ept = 0.005;
     /* Other error computations depend on having a valid fix */
     if (fix->mode >= MODE_2D) {
-	if (isnan(fix->epx) != 0 && isfinite(session->gpsdata.dop.hdop) != 0)
+	if (isfinite(fix->epx) == 0 && isfinite(session->gpsdata.dop.hdop) != 0)
 	    fix->epx = session->gpsdata.dop.xdop * h_uere;
 
-	if (isnan(fix->epy) != 0 && isfinite(session->gpsdata.dop.hdop) != 0)
+	if (isfinite(fix->epy) == 0 && isfinite(session->gpsdata.dop.hdop) != 0)
 	    fix->epy = session->gpsdata.dop.ydop * h_uere;
 
 	if ((fix->mode >= MODE_3D)
-	    && isnan(fix->epv) != 0 && isfinite(session->gpsdata.dop.vdop) != 0)
+	    && isfinite(fix->epv) == 0
+	    && isfinite(session->gpsdata.dop.vdop) != 0)
 	    fix->epv = session->gpsdata.dop.vdop * v_uere;
 
-	if (isnan(session->gpsdata.epe) != 0
+	if (isfinite(session->gpsdata.epe) == 0
 	    && isfinite(session->gpsdata.dop.pdop) != 0)
 	    session->gpsdata.epe = session->gpsdata.dop.pdop * p_uere;
 	else
@@ -960,10 +981,10 @@ static void gpsd_error_model(struct gps_device_t *session,
 	 * didn't set the speed error and climb error members itself,
 	 * try to compute them now.
 	 */
-	if (isnan(fix->eps) != 0) {
+	if (isfinite(fix->eps) == 0) {
 	    if (oldfix->mode > MODE_NO_FIX && fix->mode > MODE_NO_FIX
-		&& isnan(oldfix->epx) == 0 && isnan(oldfix->epy) == 0
-		&& isnan(oldfix->time) == 0 && isnan(fix->time) == 0
+		&& isfinite(oldfix->epx) != 0 && isfinite(oldfix->epy) != 0
+		&& isfinite(oldfix->time) != 0 && isfinite(fix->time) != 0
 		&& fix->time > oldfix->time) {
 		timestamp_t t = fix->time - oldfix->time;
 		double e =
@@ -973,7 +994,7 @@ static void gpsd_error_model(struct gps_device_t *session,
 		fix->eps = NAN;
 	}
 	if ((fix->mode >= MODE_3D)
-	    && isnan(fix->epc) != 0 && fix->time > oldfix->time) {
+	    && isfinite(fix->epc) == 0 && fix->time > oldfix->time) {
 	    if (oldfix->mode >= MODE_3D && fix->mode >= MODE_3D) {
 		timestamp_t t = fix->time - oldfix->time;
 		double e = oldfix->epv + fix->epv;
@@ -1001,7 +1022,7 @@ static void gpsd_error_model(struct gps_device_t *session,
 		double adj =
 		    earth_distance(oldfix->latitude, oldfix->longitude,
 				   fix->latitude, fix->longitude);
-		if (isnan(adj) == 0 && adj > EMIX(fix->epx, fix->epy)) {
+		if (isfinite(adj) != 0 && adj > EMIX(fix->epx, fix->epy)) {
 		    double opp = EMIX(fix->epx, fix->epy);
 		    double hyp = sqrt(adj * adj + opp * opp);
 		    fix->epd = RAD_2_DEG * 2 * asin(opp / hyp);
@@ -1424,13 +1445,16 @@ gps_mask_t gpsd_poll(struct gps_device_t *session)
 #endif /* NOFLOATS_ENABLE */
 
 	/* copy/merge device data into staging buffers */
-	if ((session->gpsdata.set & CLEAR_IS) != 0)
+	if ((session->gpsdata.set & CLEAR_IS) != 0) {
 	    gps_clear_fix(&session->gpsdata.fix);
+            gps_clear_att(&session->gpsdata.attitude);
+        }
 	/* don't downgrade mode if holding previous fix */
 	if (session->gpsdata.fix.mode > session->newdata.mode)
 	    session->gpsdata.set &= ~MODE_SET;
-	//gpsd_log(&session->context->errout, LOG_PROG,
-	//              "transfer mask: %02x\n", session->gpsdata.set);
+	/* gpsd_log(&session->context->errout, LOG_PROG,
+	                 "transfer mask: %s\n",
+                         gps_maskdump(session->gpsdata.set)); */
 	gps_merge_fix(&session->gpsdata.fix,
 		      session->gpsdata.set, &session->newdata);
 #ifndef NOFLOATS_ENABLE
@@ -1475,6 +1499,10 @@ gps_mask_t gpsd_poll(struct gps_device_t *session)
 
 	return session->gpsdata.set;
     }
+    /* Should never get here */
+    gpsd_log(&session->context->errout, LOG_EMERG,
+             "fell out of gps_poll()!\n");
+    return 0;
 }
 
 int gpsd_multipoll(const bool data_ready,
@@ -1636,8 +1664,17 @@ void gpsd_wrap(struct gps_device_t *session)
 
 void gpsd_zero_satellites( struct gps_data_t *out)
 {
+    int sat;
+
     (void)memset(out->skyview, '\0', sizeof(out->skyview));
     out->satellites_visible = 0;
+    /* zero is good inbound data for ss, elevation, and azimuth.  */
+    /* we need to set them to invalid values */
+    for ( sat = 0; sat < MAXCHANNELS; sat++ ) {
+        out->skyview[sat].azimuth = -1;
+        out->skyview[sat].elevation = -91;
+        out->skyview[sat].ss = -1.0;
+    }
 #if 0
     /*
      * We used to clear DOPs here, but this causes misbehavior on some
@@ -1656,7 +1693,7 @@ void ntp_latch(struct gps_device_t *device, struct timedelta_t *td)
     double fix_time, integral, fractional;
 
     /* this should be an invariant of the way this function is called */
-    assert(isnan(device->newdata.time)==0);
+    assert(isfinite(device->newdata.time)!=0);
 
     (void)clock_gettime(CLOCK_REALTIME, &td->clock);
     fix_time = device->newdata.time;

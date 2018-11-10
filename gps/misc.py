@@ -1,4 +1,5 @@
 # misc.py - miscellaneous geodesy and time functions
+"miscellaneous geodesy and time functions"
 #
 # This file is Copyright (c) 2010 by the GPSD project
 # BSD terms apply: see the file COPYING in the distribution root for details.
@@ -52,6 +53,8 @@ else:  # Otherwise we do something real
         if isinstance(o, str):
             return o
         if isinstance(o, bytes):
+            return str(o, encoding=BINARY_ENCODING)
+        if isinstance(o, bytearray):
             return str(o, encoding=BINARY_ENCODING)
         raise ValueError
 
@@ -222,8 +225,8 @@ def EarthDistanceSmall(c1, c2):
     # meters per degree at this latitude, corrected for WGS84 ellipsoid
     # Note the wikipedia numbers are NOT ellipsoid corrected:
     # https://en.wikipedia.org/wiki/Decimal_degrees#Precision
-    m_per_d = (111132.954 - 559.822 * math.cos(2 * phi)
-               + 1.175 * math.cos(4 * phi))
+    m_per_d = (111132.954 - 559.822 * math.cos(2 * phi) +
+               1.175 * math.cos(4 * phi))
     dlat = (lat1 - lat2) * m_per_d
     dlon = (lon1 - lon2) * m_per_d * math.cos(phi)
 

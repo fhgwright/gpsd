@@ -24,7 +24,7 @@ others apart and distinguish them from baud barf.
 
 PERMISSIONS
    This file is Copyright (c) 2010 by the GPSD project
-   BSD terms apply: see the file COPYING in the distribution root for details.
+   SPDX-License-Identifier: BSD-2-clause
 
 ***************************************************************************/
 #include <sys/types.h>
@@ -38,6 +38,7 @@ PERMISSIONS
 #include <unistd.h>
 
 #include "bits.h"
+#include "driver_greis.h"
 #include "gpsd.h"
 #include "crc24q.h"
 #include "strfuncs.h"
@@ -94,6 +95,7 @@ PERMISSIONS
  *      $GN -- Mixed GPS and GLONASS data, according to IEIC 61162-1
  *      $BD -- Beidou
  *      $GB -- Beidou
+ *      $GA -- Galileo
  *      $QZ -- QZSS GPS augmentation system
  *      $II -- Integrated Instrumentation (Raytheon's SeaTalk system).
  *      $IN -- Integrated Navigation (Garmin uses this).
@@ -131,6 +133,11 @@ static char *state_table[] = {
 #define DLE	(unsigned char)0x10
 #define STX	(unsigned char)0x02
 #define ETX	(unsigned char)0x03
+
+#if defined(TSIP_ENABLE)
+/* Maximum length a TSIP packet can be */
+#define TSIP_MAX_PACKET 255
+#endif
 
 #ifdef ONCORE_ENABLE
 static size_t oncore_payload_cksum_length(unsigned char id1, unsigned char id2)
@@ -190,6 +197,23 @@ static size_t oncore_payload_cksum_length(unsigned char id1, unsigned char id2)
 }
 #endif /* ONCORE_ENABLE */
 
+#ifdef GREIS_ENABLE
+
+static unsigned long greis_hex2bin(char c)
+/* Convert hex char to binary form. Requires that c be a hex char. */
+{
+    if ((c >= 'a') && (c <= 'f'))
+	c = c + 10 - 'a';
+    else if ((c >= 'A') && (c <= 'F'))
+	c = c + 10 - 'A';
+    else if ((c >= '0') && (c <= '9'))
+	c -= '0';
+
+    return c;
+}
+
+#endif /* GREIS_ENABLE */
+
 static bool character_pushback(struct gps_lexer_t *lexer, unsigned int newstate)
 /* push back the last character grabbed, setting a specified state */
 {
@@ -207,6 +231,21 @@ static bool character_pushback(struct gps_lexer_t *lexer, unsigned int newstate)
     }
 
     return false;
+}
+
+static void character_discard(struct gps_lexer_t *lexer)
+/* shift the input buffer to discard one character and reread data */
+{
+    memmove(lexer->inbuffer, lexer->inbuffer + 1, (size_t)-- lexer->inbuflen);
+    lexer->inbufptr = lexer->inbuffer;
+    if (lexer->errout.debug >= LOG_RAW+1) {
+	char scratchbuf[MAX_PACKET_LENGTH*4+1];
+	gpsd_log(&lexer->errout, LOG_RAW + 1,
+		 "Character discarded, buffer %zu chars = %s\n",
+		 lexer->inbuflen,
+		 gpsd_packetdump(scratchbuf, sizeof(scratchbuf),
+				    (char *)lexer->inbuffer, lexer->inbuflen));
+    }
 }
 
 static bool nextstate(struct gps_lexer_t *lexer, unsigned char c)
@@ -323,6 +362,17 @@ static bool nextstate(struct gps_lexer_t *lexer, unsigned char c)
 	    break;
 	}
 #endif /* GEOSTAR_ENABLE */
+#ifdef GREIS_ENABLE
+	if (c == 'R') {
+	    lexer->state = GREIS_REPLY_1;
+	    break;
+	}
+	/* Not the only possibility, but it is a distinctive cycle starter. */
+	if (c == '~') {
+	    lexer->state = GREIS_ID_1;
+	    break;
+	}
+#endif /* GREIS_ENABLE */
 #ifdef RTCM104V2_ENABLE
 	if ((isgpsstat = rtcm2_decode(lexer, c)) == ISGPS_SYNC) {
 	    lexer->state = RTCM2_SYNC_STATE;
@@ -389,7 +439,7 @@ static bool nextstate(struct gps_lexer_t *lexer, unsigned char c)
 	 * We have a log from China with a Beidou device using $GB
 	 * rather than $BD.
 	 */
-	if (c == 'B' || c == 'P' || c == 'N' || c == 'L')
+	if (c == 'B' || c == 'P' || c == 'N' || c == 'L' || c == 'A')
 	    lexer->state = NMEA_LEADER_END;
 	else
 	    (void) character_pushback(lexer, GROUND_STATE);
@@ -1003,6 +1053,7 @@ static bool nextstate(struct gps_lexer_t *lexer, unsigned char c)
 	/* check last because there's no checksum */
 #if defined(TSIP_ENABLE)
 	if (c >= 0x13) {
+	    lexer->length = TSIP_MAX_PACKET;
 	    lexer->state = TSIP_PAYLOAD;
 	    break;
 	}
@@ -1011,7 +1062,7 @@ static bool nextstate(struct gps_lexer_t *lexer, unsigned char c)
 	    lexer->state = GROUND_STATE;
 	    break;
 	}
-	// FALL-THRU!!!!! no break here
+	__attribute__ ((fallthrough));
 #endif /* TSIP_ENABLE */
 #ifdef NAVCOM_ENABLE
     case NAVCOM_LEADER_1:
@@ -1353,17 +1404,74 @@ static bool nextstate(struct gps_lexer_t *lexer, unsigned char c)
 	    return character_pushback(lexer, GROUND_STATE);
 	break;
 #endif /* GEOSTAR_ENABLE */
+#ifdef GREIS_ENABLE
+    case GREIS_EXPECTED:
+    case GREIS_RECOGNIZED:
+	if (!isascii(c)) {
+	    return character_pushback(lexer, GROUND_STATE);
+	} else if (c == '#') {
+	    /* Probably a comment used by the testsuite */
+	    lexer->state = COMMENT_BODY;
+	} else if (c == '\r' || c == '\n') {
+	    /* Arbitrary CR/LF allowed here, so continue to expect GREIS */
+	    lexer->state = GREIS_EXPECTED;
+	    character_discard(lexer);
+	} else {
+	    lexer->state = GREIS_ID_1;
+	}
+	break;
+    case GREIS_REPLY_1:
+	if (c != 'E')
+	    return character_pushback(lexer, GROUND_STATE);
+	lexer->state = GREIS_REPLY_2;
+	break;
+    case GREIS_ID_1:
+	if (!isascii(c))
+	    return character_pushback(lexer, GROUND_STATE);
+	lexer->state = GREIS_ID_2;
+	break;
+    case GREIS_REPLY_2:
+    case GREIS_ID_2:
+	if (!isxdigit(c))
+	    return character_pushback(lexer, GROUND_STATE);
+	lexer->length = greis_hex2bin(c) << 8;
+	lexer->state = GREIS_LENGTH_1;
+	break;
+    case GREIS_LENGTH_1:
+	if (!isxdigit(c))
+	    return character_pushback(lexer, GROUND_STATE);
+	lexer->length += greis_hex2bin(c) << 4;
+	lexer->state = GREIS_LENGTH_2;
+	break;
+    case GREIS_LENGTH_2:
+	if (!isxdigit(c))
+	    return character_pushback(lexer, GROUND_STATE);
+	lexer->length += greis_hex2bin(c);
+	lexer->state = GREIS_PAYLOAD;
+	break;
+    case GREIS_PAYLOAD:
+	if (--lexer->length == 0)
+	    lexer->state = GREIS_RECOGNIZED;
+	/* else stay in payload state */
+	break;
+#endif /* GREIS_ENABLE */
 #ifdef TSIP_ENABLE
     case TSIP_LEADER:
 	/* unused case */
-	if (c >= 0x13)
+	if (c >= 0x13) {
+	    lexer->length = TSIP_MAX_PACKET;
 	    lexer->state = TSIP_PAYLOAD;
-	else
+	} else
 	    return character_pushback(lexer, GROUND_STATE);
 	break;
     case TSIP_PAYLOAD:
 	if (c == DLE)
 	    lexer->state = TSIP_DLE;
+	if ( 0 == --lexer->length ) {
+	    /* uh, oh, packet too long, probably was never TSIP */
+            /* note lexer->length is unsigned */
+	    lexer->state = GROUND_STATE;
+	}
 	break;
     case TSIP_DLE:
 	switch (c) {
@@ -1371,6 +1479,7 @@ static bool nextstate(struct gps_lexer_t *lexer, unsigned char c)
 	    lexer->state = TSIP_RECOGNIZED;
 	    break;
 	case DLE:
+	    lexer->length = TSIP_MAX_PACKET;
 	    lexer->state = TSIP_PAYLOAD;
 	    break;
 	default:
@@ -1605,21 +1714,6 @@ static void packet_unstash(struct gps_lexer_t *lexer)
     }
 }
 #endif /* STASH_ENABLE */
-
-static void character_discard(struct gps_lexer_t *lexer)
-/* shift the input buffer to discard one character and reread data */
-{
-    memmove(lexer->inbuffer, lexer->inbuffer + 1, (size_t)-- lexer->inbuflen);
-    lexer->inbufptr = lexer->inbuffer;
-    if (lexer->errout.debug >= LOG_RAW+1) {
-	char scratchbuf[MAX_PACKET_LENGTH*4+1];
-	gpsd_log(&lexer->errout, LOG_RAW + 1,
-		 "Character discarded, buffer %zu chars = %s\n",
-		 lexer->inbuflen,
-		 gpsd_packetdump(scratchbuf, sizeof(scratchbuf),
-				    (char *)lexer->inbuffer, lexer->inbuflen));
-    }
-}
 
 /* get 0-origin big-endian words relative to start of packet buffer */
 #define getword(i) (short)(lexer->inbuffer[2*(i)] | (lexer->inbuffer[2*(i)+1] << 8))
@@ -2285,6 +2379,49 @@ void packet_parse(struct gps_lexer_t *lexer)
 	    break;
 	}
 #endif /* GEOSTAR_ENABLE */
+#ifdef GREIS_ENABLE
+	else if (lexer->state == GREIS_RECOGNIZED) {
+	    int len = lexer->inbufptr - lexer->inbuffer;
+
+	    if (lexer->inbuffer[0] == 'R' && lexer->inbuffer[1] == 'E') {
+		/* Replies don't have checksum */
+		gpsd_log(&lexer->errout, LOG_IO,
+			 "Accept GREIS reply packet len %d\n", len);
+		packet_accept(lexer, GREIS_PACKET);
+	    } else if (lexer->inbuffer[0] == 'E' && lexer->inbuffer[1] == 'R') {
+		/* Error messages don't have checksum */
+		gpsd_log(&lexer->errout, LOG_IO,
+			 "Accept GREIS error packet len %d\n", len);
+		packet_accept(lexer, GREIS_PACKET);
+	    } else {
+		unsigned char expected_cs = lexer->inbuffer[len - 1];
+		unsigned char cs = greis_checksum(lexer->inbuffer, len - 1);
+
+		if (cs == expected_cs) {
+		    gpsd_log(&lexer->errout, LOG_IO,
+			     "Accept GREIS packet type '%c%c' len %d\n",
+			     lexer->inbuffer[0], lexer->inbuffer[1], len);
+		    packet_accept(lexer, GREIS_PACKET);
+		} else {
+		    /*
+		     * Print hex instead of raw characters, since they might be
+		     * unprintable. If \0, it will even mess up the log output.
+		     */
+		    gpsd_log(&lexer->errout, LOG_IO,
+			     "REJECT GREIS len %d."
+			     " Bad checksum %#02x, expecting %#02x."
+			     " Packet type in hex: 0x%02x%02x",
+			     len, cs, expected_cs, lexer->inbuffer[0],
+			     lexer->inbuffer[1]);
+		    packet_accept(lexer, BAD_PACKET);
+		    /* got this far, fair to expect we will get more GREIS */
+		    lexer->state = GREIS_EXPECTED;
+		}
+	    }
+	    packet_discard(lexer);
+	    break;
+	}
+#endif /* GREIS_ENABLE */
 #ifdef RTCM104V2_ENABLE
 	else if (lexer->state == RTCM2_RECOGNIZED) {
 	    /*

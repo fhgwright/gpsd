@@ -2,7 +2,7 @@
  * This is the gpsd driver for Skytraq GPSes operating in binary mode.
  *
  * This file is Copyright (c) 2016 by the GPSD project
- * BSD terms apply: see the file COPYING in the distribution root for details.
+ * SPDX-License-Identifier: BSD-2-clause
  */
 
 #include <stdio.h>
@@ -76,7 +76,7 @@ static bool sky_write(struct gps_device_t *session, unsigned char *msg)
 #endif /* __UNUSED */
 
 /*
- * decode MID 0x*), Software Version
+ * decode MID 0x80, Software Version
  *
  * 10 bytes
  */
@@ -107,7 +107,7 @@ static gps_mask_t sky_msg_80(struct gps_device_t *session,
     rev_dd  = getub(buf, 13);
 
     (void)snprintf(session->subtype, sizeof(session->subtype) - 1,
-	     "Skytraq: kver=%u.%u,%u, over=%u.%u,%u, rev=%u.%u.%u",
+	     "kver=%3u.%2u,%2u, over=%3u.%2u,%2u, rev=%02u.%02u.%02u",
 	    kver_x, kver_y, kver_z,
 	    over_x, over_y, over_z,
 	    rev_yy, rev_mm, rev_dd);
@@ -293,13 +293,17 @@ static gps_mask_t sky_msg_DF(struct gps_device_t *session,
     f_tow = getbed64((const char *)buf, 5);
 
     /* position/velocity is bytes 13-48, meters and m/s */
+    session->newdata.ecef.x = (double)getbed64((const char *)buf, 13),
+    session->newdata.ecef.y = (double)getbed64((const char *)buf, 21),
+    session->newdata.ecef.z = (double)getbed64((const char *)buf, 29),
+    session->newdata.ecef.vx = (double)getbef32((const char *)buf, 37),
+    session->newdata.ecef.vy = (double)getbef32((const char *)buf, 41),
+    session->newdata.ecef.vz = (double)getbef32((const char *)buf, 46);
+
     ecef_to_wgs84fix(&session->newdata, &session->gpsdata.separation,
-		     (double)getbed64((const char *)buf, 13),
-		     (double)getbed64((const char *)buf, 21),
-		     (double)getbed64((const char *)buf, 29),
-		     (double)getbef32((const char *)buf, 37),
-		     (double)getbef32((const char *)buf, 41),
-		     (double)getbef32((const char *)buf, 46));
+	session->newdata.ecef.x, session->newdata.ecef.y,
+	session->newdata.ecef.z, session->newdata.ecef.vx,
+	session->newdata.ecef.vy, session->newdata.ecef.vz);
 
     clock_bias = getbed64((const char *)buf, 49);
     clock_drift = getbes32(buf, 57);
@@ -325,8 +329,9 @@ static gps_mask_t sky_msg_DF(struct gps_device_t *session,
 	    session->gpsdata.dop.vdop,
 	    session->gpsdata.dop.tdop);
 
-    mask |= TIME_SET | LATLON_SET | TRACK_SET |
-	SPEED_SET | STATUS_SET | MODE_SET | DOP_SET | CLEAR_IS | REPORT_IS;
+    mask |= TIME_SET | LATLON_SET | TRACK_SET | ECEF_SET | VECEF_SET
+            | SPEED_SET | STATUS_SET | MODE_SET | DOP_SET | CLEAR_IS
+            | REPORT_IS;
     return mask;
 }
 

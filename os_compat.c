@@ -1,6 +1,6 @@
 /*
  * This file is Copyright (c) 2017 by the GPSD project
- * BSD terms apply: see the file COPYING in the distribution root for details.
+ * SPDX-License-Identifier: BSD-2-clause
  *
  * This file contains functions to deal with compatibility issues across OSes.
  *
@@ -106,7 +106,7 @@ int os_daemon(int nochdir, int noclose)
 
 #else /* HAVE_DAEMON */
 
-#ifdef __linux__
+#if defined (__linux__) || defined (__GLIBC__)
 
 /* daemon() needs _DEFAULT_SOURCE */
 #undef _DEFAULT_SOURCE

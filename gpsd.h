@@ -1,7 +1,7 @@
 /* gpsd.h -- fundamental types and structures for the gpsd library
  *
  * This file is Copyright (c) 2017 by the GPSD project
- * BSD terms apply: see the file COPYING in the distribution root for details.
+ * SPDX-License-Identifier: BSD-2-clause
  */
 
 #ifndef _GPSD_H_
@@ -50,9 +50,12 @@ extern "C" {
  * 3.11 A precision field, log2 of the time source jitter, has been added
  *      to the PPS report.  See ntpshm.h for more details.
  * 3.12 OSC message added to repertoire.
+ * 3.13 gnssid:svid added to SAT
+ *      time added to ATT
  */
-#define GPSD_PROTO_MAJOR_VERSION	3	/* bump on incompatible changes */
-#define GPSD_PROTO_MINOR_VERSION	12	/* bump on compatible changes */
+/* Keep in sync with api_major_version and api_minor gps/__init__.py */
+#define GPSD_PROTO_MAJOR_VERSION	3   /* bump on incompatible changes */
+#define GPSD_PROTO_MINOR_VERSION	13  /* bump on compatible changes */
 
 #define JSON_DATE_MAX	24	/* ISO8601 timestamp with 2 decimal places */
 
@@ -70,9 +73,23 @@ extern "C" {
 #ifdef EARTHMATE_ENABLE
 #define ZODIAC_ENABLE
 #endif
-#if defined(ZODIAC_ENABLE) || defined(SIRF_ENABLE) || defined(GARMIN_ENABLE) || defined(TSIP_ENABLE) || defined(EVERMORE_ENABLE) || defined(ITRAX_ENABLE) || defined(UBLOX_ENABLE) || defined(SUPERSTAR2_ENABLE) || defined(ONCORE_ENABLE) || defined(GEOSTAR_ENABLE) || defined(NAVCOM_ENABLE) || defined(NMEA2000_ENABLE)
+
+#if defined(EVERMORE_ENABLE) || \
+     defined(GARMIN_ENABLE) || \
+     defined(GEOSTAR_ENABLE) || \
+     defined(GREIS_ENABLE) || \
+     defined(ITRAX_ENABLE) || \
+     defined(NAVCOM_ENABLE) || \
+     defined(NMEA2000_ENABLE) || \
+     defined(ONCORE_ENABLE) || \
+     defined(SIRF_ENABLE) || \
+     defined(SUPERSTAR2_ENABLE) || \
+     defined(TSIP_ENABLE) || \
+     defined(UBLOX_ENABLE) || \
+     defined(ZODIAC_ENABLE)
 #define BINARY_ENABLE
 #endif
+
 #if defined(TRIPMATE_ENABLE) || defined(BINARY_ENABLE)
 #define NON_NMEA0183_ENABLE
 #endif
@@ -163,12 +180,13 @@ struct gps_lexer_t {
 #define ONCORE_PACKET   	13
 #define GEOSTAR_PACKET   	14
 #define NMEA2000_PACKET 	15
-#define MAX_GPSPACKET_TYPE	15	/* increment this as necessary */
-#define RTCM2_PACKET    	16
-#define RTCM3_PACKET    	17
-#define JSON_PACKET    	    	18
-#define PACKET_TYPES		19	/* increment this as necessary */
-#define SKY_PACKET     		20
+#define GREIS_PACKET		16
+#define MAX_GPSPACKET_TYPE	16	/* increment this as necessary */
+#define RTCM2_PACKET    	17
+#define RTCM3_PACKET    	18
+#define JSON_PACKET    	    	19
+#define PACKET_TYPES		20	/* increment this as necessary */
+#define SKY_PACKET     		21
 #define TEXTUAL_PACKET_TYPE(n)	((((n)>=NMEA_PACKET) && ((n)<=MAX_TEXTUAL_TYPE)) || (n)==JSON_PACKET)
 #define GPS_PACKET_TYPE(n)	(((n)>=NMEA_PACKET) && ((n)<=MAX_GPSPACKET_TYPE))
 #define LOSSLESS_PACKET_TYPE(n)	(((n)>=RTCM2_PACKET) && ((n)<=RTCM3_PACKET))
@@ -490,7 +508,7 @@ struct gps_device_t {
     struct gps_lexer_t lexer;
     int badcount;
     int subframe_count;
-    char subtype[64];			/* firmware version or subtype ID */
+    char subtype[96];			/* firmware version or subtype ID */
     time_t opentime;
     time_t releasetime;
     bool zerokill;
@@ -539,10 +557,12 @@ struct gps_device_t {
 	bool seen_glgsv;
 	bool seen_bdgsv;
 	bool seen_qzss;
+	bool seen_gagsv;
 	char last_gsv_talker;
 	bool seen_glgsa;
 	bool seen_gngsa;
 	bool seen_bdgsa;
+	bool seen_gagsa;
 	char last_gsa_talker;
 	/*
 	 * State for the cycle-tracking machinery.
@@ -580,6 +600,17 @@ struct gps_device_t {
 	    unsigned int physical_port;
 	} geostar;
 #endif /* GEOSTAR_ENABLE */
+#ifdef GREIS_ENABLE
+	struct {
+	    uint32_t rt_tod;		/* RT message time of day (modulo 1 day) */
+	    bool seen_rt;		/* true if seen RT message */
+	    bool seen_uo;		/* true if seen UO message */
+	    bool seen_si;		/* true if seen SI message */
+	    bool seen_az;		/* true if seen AZ message */
+	    bool seen_ec;		/* true if seen EC message */
+	    bool seen_el;		/* true if seen EL message */
+	} greis;
+#endif /* GREIS_ENABLE */
 #ifdef SIRF_ENABLE
 	struct {
 	    unsigned int need_ack;	/* if NZ we're awaiting ACK */

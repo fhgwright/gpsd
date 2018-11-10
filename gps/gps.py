@@ -1,18 +1,19 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+'''gps.py -- Python interface to GPSD.
+
+This interface has a lot of historical cruft in it related to old
+protocol, and was modeled on the C interface. It won't be thrown
+away, but it's likely to be deprecated in favor of something more
+Pythonic.
+
+The JSON parts of this (which will be reused by any new interface)
+now live in a different module.
+'''
+
 #
 # This file is Copyright (c) 2010 by the GPSD project
 # BSD terms apply: see the file COPYING in the distribution root for details.
-#
-# gps.py -- Python interface to GPSD.
-#
-# This interface has a lot of historical cruft in it related to old
-# protocol, and was modeled on the C interface. It won't be thrown
-# away, but it's likely to be deprecated in favor of something more
-# Pythonic.
-#
-# The JSON parts of this (which will be reused by any new interface)
-# now live in a different module.
 #
 
 # This code runs compatibly under Python 2 and 3.x for x >= 2.
@@ -20,12 +21,18 @@
 from __future__ import absolute_import, print_function, division
 
 from .client import *
+from .watch_options import *
+
 
 NaN = float('nan')
 
 
-def isnan(x):
-    return str(x) == 'nan'
+def isfinite(f):
+    "Check if f is finite"
+    # Python 2 does not think +Inf or -Inf are NaN
+    # Python 2 has no easier way to test for Inf
+    return float('-inf') < float(f) < float('inf')
+
 
 # Don't hand-hack this list, it's generated.
 ONLINE_SET = (1 << 1)
@@ -62,8 +69,8 @@ ERROR_SET = (1 << 31)
 TIMEDRIFT_SET = (1 << 32)
 EOF_SET = (1 << 33)
 SET_HIGH_BIT = 34
-UNION_SET = (RTCM2_SET | RTCM3_SET | SUBFRAME_SET | AIS_SET | VERSION_SET
-             | DEVICELIST_SET | ERROR_SET | GST_SET)
+UNION_SET = (RTCM2_SET | RTCM3_SET | SUBFRAME_SET | AIS_SET | VERSION_SET |
+             DEVICELIST_SET | ERROR_SET | GST_SET)
 STATUS_NO_FIX = 0
 STATUS_FIX = 1
 STATUS_DGPS_FIX = 2
@@ -73,43 +80,35 @@ MODE_3D = 3
 MAXCHANNELS = 72  # Copied from gps.h, but not required to match
 SIGNAL_STRENGTH_UNKNOWN = NaN
 
-WATCH_ENABLE = 0x000001        # enable streaming
-WATCH_DISABLE = 0x000002       # disable watching
-WATCH_JSON = 0x000010          # JSON output
-WATCH_NMEA = 0x000020          # output in NMEA
-WATCH_RARE = 0x000040          # output of packets in hex
-WATCH_RAW = 0x000080           # output of raw packets
-WATCH_SCALED = 0x000100        # scale output to floats
-WATCH_TIMING = 0x000200        # timing information
-WATCH_DEVICE = 0x000800        # watch specific device
-WATCH_SPLIT24 = 0x001000       # split AIS Type 24s
-WATCH_PPS = 0x002000           # enable PPS JSON
-WATCH_NEWSTYLE = 0x010000      # force JSON streaming
-WATCH_OLDSTYLE = 0x020000      # force old-style streaming
-
 
 class gpsfix(object):
+    "Class to hold one GPS fix"
+
     def __init__(self):
-        self.mode = MODE_NO_FIX
-        self.time = NaN
-        self.ept = NaN
-        self.latitude = self.longitude = 0.0
-        self.epx = NaN
-        self.epy = NaN
+        "Init class gpsfix"
+
         self.altitude = NaN         # Meters
-        self.epv = NaN
-        self.track = NaN            # Degrees from true north
-        self.speed = NaN            # Knots
         self.climb = NaN            # Meters per second
+        self.epc = NaN
         self.epd = NaN
         self.eps = NaN
-        self.epc = NaN
+        self.ept = NaN
+        self.epv = NaN
+        self.epx = NaN
+        self.epy = NaN
+        self.latitude = self.longitude = 0.0
+        self.mode = MODE_NO_FIX
+        self.speed = NaN            # Knots
+        self.status = STATUS_NO_FIX
+        self.time = NaN
+        self.track = NaN            # Degrees from true north
 
 
 class gpsdata(object):
     "Position, track, velocity and status information returned by a GPS."
 
-    class satellite:
+    class satellite(object):
+        "Class to hold satellite data"
         def __init__(self, PRN, elevation, azimuth, ss, used=None):
             self.PRN = PRN
             self.elevation = elevation
@@ -154,15 +153,15 @@ class gpsdata(object):
     def __repr__(self):
         st = "Time:     %s (%s)\n" % (self.utc, self.fix.time)
         st += "Lat/Lon:  %f %f\n" % (self.fix.latitude, self.fix.longitude)
-        if isnan(self.fix.altitude):
+        if not isfinite(self.fix.altitude):
             st += "Altitude: ?\n"
         else:
             st += "Altitude: %f\n" % (self.fix.altitude)
-        if isnan(self.fix.speed):
+        if not isfinite(self.fix.speed):
             st += "Speed:    ?\n"
         else:
             st += "Speed:    %f\n" % (self.fix.speed)
-        if isnan(self.fix.track):
+        if not isfinite(self.fix.track):
             st += "Track:    ?\n"
         else:
             st += "Track:    %f\n" % (self.fix.track)
@@ -182,20 +181,35 @@ class gpsdata(object):
 class gps(gpscommon, gpsdata, gpsjson):
     "Client interface to a running gpsd instance."
 
-    def __init__(self, host="127.0.0.1", port=GPSD_PORT, verbose=0, mode=0):
-        gpscommon.__init__(self, host, port, verbose)
+    # module version, would be nice to automate the version
+    __version__ = "3.18"
+
+    def __init__(self, host="127.0.0.1", port=GPSD_PORT, verbose=0, mode=0,
+                 reconnect=False):
+        self.activated = None
+        self.clock_sec = NaN
+        self.clock_nsec = NaN
+        self.path = ''
+        self.precision = 0
+        self.real_sec = NaN
+        self.real_nsec = NaN
+        self.serialmode = "8N1"
+        gpscommon.__init__(self, host, port, verbose, reconnect)
         gpsdata.__init__(self)
+        gpsjson.__init__(self)
         if mode:
             self.stream(mode)
 
     def __oldstyle_shim(self):
         # The rest is backwards compatibility for the old interface
         def default(k, dflt, vbit=0):
+            "Return default for key"
             if k not in self.data.keys():
                 return dflt
-            else:
-                self.valid |= vbit
-                return self.data[k]
+
+            self.valid |= vbit
+            return self.data[k]
+
         if self.data.get("class") == "VERSION":
             self.version = self.data
         elif self.data.get("class") == "DEVICE":
@@ -279,8 +293,8 @@ class gps(gpscommon, gpsdata, gpsjson):
             raise StopIteration
         if hasattr(self, "data"):
             return self.data
-        else:
-            return self.response
+
+        return self.response
 
     def next(self):
         "Python 2 backward compatibility."
@@ -288,30 +302,14 @@ class gps(gpscommon, gpsdata, gpsjson):
 
     def stream(self, flags=0, devpath=None):
         "Ask gpsd to stream reports at your client."
-        if (flags & (WATCH_JSON | WATCH_OLDSTYLE | WATCH_NMEA
-                     | WATCH_RAW)) == 0:
-            flags |= WATCH_JSON
-        if flags & WATCH_DISABLE:
-            if flags & WATCH_OLDSTYLE:
-                arg = "w-"
-                if flags & WATCH_NMEA:
-                    arg += 'r-'
-                    return self.send(arg)
-            else:
-                gpsjson.stream(self, flags, devpath)
-        else:  # flags & WATCH_ENABLE:
-            if flags & WATCH_OLDSTYLE:
-                arg = 'w+'
-                if flags & WATCH_NMEA:
-                    arg += 'r+'
-                    return self.send(arg)
-            else:
-                gpsjson.stream(self, flags, devpath)
+
+        gpsjson.stream(self, flags, devpath)
 
 
 def is_sbas(prn):
     "Is this the NMEA ID of an SBAS satellite?"
     return prn >= 120 and prn <= 158
+
 
 if __name__ == '__main__':
     import getopt
@@ -327,9 +325,9 @@ if __name__ == '__main__':
         sys.exit(1)
 
     opts = {"verbose": verbose}
-    if len(arguments) > 0:
+    if arguments:
         opts["host"] = arguments[0]
-    if len(arguments) > 1:
+    if arguments:
         opts["port"] = arguments[1]
 
     session = gps(**opts)

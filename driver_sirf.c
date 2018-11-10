@@ -32,7 +32,7 @@
  * the manual advises; this does not fix the problem.
  *
  * This file is Copyright (c) 2010 by the GPSD project
- * BSD terms apply: see the file COPYING in the distribution root for details.
+ * SPDX-License-Identifier: BSD-2-clause
  */
 
 #include <stdio.h>
@@ -572,8 +572,17 @@ static gps_mask_t sirf_msg_svinfo(struct gps_device_t *session,
 	int cn;
 	int off = 8 + 15 * i;
 	bool good;
+	short prn = (short)getub(buf, off);
 	unsigned short stat = (unsigned short)getbeu16(buf, off + 3);
-	session->gpsdata.skyview[st].PRN = (short)getub(buf, off);
+	session->gpsdata.skyview[st].PRN = prn;
+	session->gpsdata.skyview[st].svid = prn;
+	if (120 <= prn && 158 >= prn) {
+            /* SBAS */
+            session->gpsdata.skyview[st].gnssid = 1;
+        } else {
+            /* GPS */
+            session->gpsdata.skyview[st].gnssid = 0;
+        }
 	session->gpsdata.skyview[st].azimuth =
 	    (short)(((unsigned)getub(buf, off + 1) * 3) / 2.0);
 	session->gpsdata.skyview[st].elevation =
@@ -606,10 +615,13 @@ static gps_mask_t sirf_msg_svinfo(struct gps_device_t *session,
     /* mark SBAS sats in use if SBAS was in use as of the last MID 27 */
     for (i = 0; i < st; i++) {
 	int prn = session->gpsdata.skyview[i].PRN;
-	if (SBAS_PRN(prn) \
-		&& session->gpsdata.status == STATUS_DGPS_FIX \
-		&& session->driver.sirf.dgps_source == SIRF_DGPS_SOURCE_SBAS)
+	if ((120 <= prn && 158 >= prn) &&
+	    session->gpsdata.status == STATUS_DGPS_FIX &&
+	    session->driver.sirf.dgps_source == SIRF_DGPS_SOURCE_SBAS) {
+            /* used does not seem right, DGPS means got the correction
+             * data, not that the geometry was improved... */
 	    session->gpsdata.skyview[i].used = true;
+        }
     }
 #ifdef TIMEHINT_ENABLE
     if (st < 3) {
@@ -703,13 +715,17 @@ static gps_mask_t sirf_msg_navsol(struct gps_device_t *session,
      * we get that data from the svinfo packet.
      */
     /* position/velocity is bytes 1-18 */
+    session->newdata.ecef.x = (double)getbes32(buf, 1) * 1.0,
+    session->newdata.ecef.y = (double)getbes32(buf, 5) * 1.0,
+    session->newdata.ecef.z = (double)getbes32(buf, 9) * 1.0,
+    session->newdata.ecef.vx = (double)getbes16(buf, 13) / 8.0,
+    session->newdata.ecef.vy = (double)getbes16(buf, 15) / 8.0,
+    session->newdata.ecef.vz = (double)getbes16(buf, 17) / 8.0;
+
     ecef_to_wgs84fix(&session->newdata, &session->gpsdata.separation,
-		     (double)getbes32(buf, 1) * 1.0,
-		     (double)getbes32(buf, 5) * 1.0,
-		     (double)getbes32(buf, 9) * 1.0,
-		     (double)getbes16(buf, 13) / 8.0,
-		     (double)getbes16(buf, 15) / 8.0,
-		     (double)getbes16(buf, 17) / 8.0);
+		     session->newdata.ecef.x, session->newdata.ecef.y,
+		     session->newdata.ecef.z, session->newdata.ecef.vx,
+		     session->newdata.ecef.vy, session->newdata.ecef.vz);
     /* fix status is byte 19 */
     navtype = (unsigned short)getub(buf, 19);
     session->gpsdata.status = STATUS_NO_FIX;
@@ -747,9 +763,8 @@ static gps_mask_t sirf_msg_navsol(struct gps_device_t *session,
     session->gpsdata.dop.hdop = (double)getub(buf, 20) / 5.0;
     /* clear computed DOPs so they get recomputed. */
     session->gpsdata.dop.tdop = NAN;
-    mask |=
-	TIME_SET | LATLON_SET | ALTITUDE_SET | TRACK_SET |
-	SPEED_SET | STATUS_SET | MODE_SET | DOP_SET | USED_IS;
+    mask |= TIME_SET | LATLON_SET | ALTITUDE_SET | TRACK_SET | ECEF_SET
+            | VECEF_SET | SPEED_SET | STATUS_SET | MODE_SET | DOP_SET | USED_IS;
     if ( 3 <= session->gpsdata.satellites_visible ) {
 	mask |= NTPTIME_IS;
     }

@@ -2,7 +2,7 @@
  * The generic GPS packet monitor.
  *
  * This file is Copyright (c) 2010 by the GPSD project
- * BSD terms apply: see the file COPYING in the distribution root for details.
+ * SPDX-License-Identifier: BSD-2-clause
  */
 
 /* for vsnprintf() FreeBSD wants __ISO_C_VISIBLE >= 1999 */
@@ -425,7 +425,7 @@ void monitor_log(const char *fmt, ...)
 
 static const char *promptgen(void)
 {
-    static char buf[sizeof(session.gpsdata.dev.path)];
+    static char buf[sizeof(session.gpsdata.dev.path) + HOST_NAME_MAX + 20];
 
     if (serial)
 	(void)snprintf(buf, sizeof(buf),
@@ -858,7 +858,7 @@ static void gpsmon_hook(struct gps_device_t *device, gps_mask_t changed UNUSED)
 #ifdef NTP_ENABLE
     /* Update the last fix time seen for PPS if we've actually seen one,
      * and it is a new second. */
-    if ( 0 != isnan(device->newdata.time)) {
+    if ( 0 == isfinite(device->newdata.time)) {
 	// "NTP: bad new time
 #if defined(PPS_ENABLE)
     } else if (device->newdata.time <= device->pps_thread.fix_in.real.tv_sec) {
@@ -1298,9 +1298,16 @@ int main(int argc, char **argv)
     }
 
     if (serial) {
-	(void) strlcpy(session.gpsdata.dev.path,
-		       source.device,
-		       sizeof(session.gpsdata.dev.path));
+        if (NULL == source.device) {
+            /* this can happen with "gpsmon /dev:dd" */
+	    (void) strlcpy(session.gpsdata.dev.path,
+			   argv[optind],
+			   sizeof(session.gpsdata.dev.path));
+        } else {
+	    (void) strlcpy(session.gpsdata.dev.path,
+			   source.device,
+			   sizeof(session.gpsdata.dev.path));
+        }
     } else {
 	if (strstr(source.server, "//") == 0)
 	    (void) strlcpy(session.gpsdata.dev.path,

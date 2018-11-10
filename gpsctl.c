@@ -1,7 +1,7 @@
 /* gpsctl.c -- tweak the control settings on a GPS
  *
  * This file is Copyright (c) 2010 by the GPSD project
- * BSD terms apply: see the file COPYING in the distribution root for details.
+ * SPDX-License-Identifier: BSD-2-clause
  *
  */
 
@@ -127,7 +127,7 @@ static bool gps_query(struct gps_data_t *gpsdata,
 
 	gpsd_log(&context.errout, LOG_PROG, "reading...\n");
 
-	(void)gps_read(gpsdata);
+	(void)gps_read(gpsdata, NULL, 0);
 	if (ERROR_SET & gpsdata->set) {
 	    gpsd_log(&context.errout, LOG_ERROR, "error '%s'\n", gpsdata->error);
 	    return false;
@@ -295,6 +295,9 @@ int main(int argc, char **argv)
 	    break;
 	case 't':		/* force the device type */
 	    devtype = optarg;
+	    /* experimental kluge */
+	    if (strcmp(devtype, "u-blox") == 0)
+		timeout = 2;
 	    break;
 	case 'R':		/* remove the SHM export segment */
 #ifdef SHM_EXPORT_ENABLE
@@ -434,7 +437,7 @@ int main(int argc, char **argv)
 
 	    while (devcount > 0) {
 		errno = 0;
-		if (gps_read(&gpsdata) == -1) {
+		if (gps_read(&gpsdata, NULL, 0) == -1) {
 		    gpsd_log(&context.errout, LOG_ERROR, "data read failed.\n");
 		    (void)gps_close(&gpsdata);
 		    exit(EXIT_FAILURE);

@@ -1,7 +1,7 @@
 /* gpsutils.c -- code shared between low-level and high-level interfaces
  *
  * This file is Copyright (c) 2010 by the GPSD project
- * BSD terms apply: see the file COPYING in the distribution root for details.
+ * SPDX-License-Identifier: BSD-2-clause
  */
 
 /* The strptime prototype is not provided unless explicitly requested.
@@ -237,10 +237,13 @@ done:
 void gps_clear_fix(struct gps_fix_t *fixp)
 /* stuff a fix structure with recognizable out-of-band values */
 {
+    memset(fixp, 0, sizeof(struct gps_fix_t));
     fixp->time = NAN;
     fixp->mode = MODE_NOT_SEEN;
-    fixp->latitude = fixp->longitude = NAN;
+    fixp->latitude = NAN;
+    fixp->longitude = NAN;
     fixp->track = NAN;
+    fixp->magnetic_track = NAN;
     fixp->speed = NAN;
     fixp->climb = NAN;
     fixp->altitude = NAN;
@@ -251,6 +254,37 @@ void gps_clear_fix(struct gps_fix_t *fixp)
     fixp->epd = NAN;
     fixp->eps = NAN;
     fixp->epc = NAN;
+    /* clear ECEF too */
+    fixp->ecef.x = NAN;
+    fixp->ecef.y = NAN;
+    fixp->ecef.z = NAN;
+    fixp->ecef.vx = NAN;
+    fixp->ecef.vy = NAN;
+    fixp->ecef.vz = NAN;
+    fixp->ecef.pAcc = NAN;
+    fixp->ecef.vAcc = NAN;
+}
+
+void gps_clear_att(struct attitude_t *attp)
+/* stuff an attitude structure with recognizable out-of-band values */
+{
+    memset(attp, 0, sizeof(struct attitude_t));
+    attp->pitch = NAN;
+    attp->roll = NAN;
+    attp->yaw = NAN;
+    attp->dip = NAN;
+    attp->mag_len = NAN;
+    attp->mag_x = NAN;
+    attp->mag_y = NAN;
+    attp->mag_z = NAN;
+    attp->acc_len = NAN;
+    attp->acc_x = NAN;
+    attp->acc_y = NAN;
+    attp->acc_z = NAN;
+    attp->gyro_x = NAN;
+    attp->gyro_y = NAN;
+    attp->temp = NAN;
+    attp->depth = NAN;
 }
 
 void gps_clear_dop( struct dop_t *dop)
@@ -277,7 +311,9 @@ void gps_merge_fix(struct gps_fix_t *to,
     if ((transfer & ALTITUDE_SET) != 0)
 	to->altitude = from->altitude;
     if ((transfer & TRACK_SET) != 0)
-	to->track = from->track;
+        to->track = from->track;
+    if ((transfer & MAGNETIC_TRACK_SET) != 0)
+        to->magnetic_track = from->magnetic_track;
     if ((transfer & SPEED_SET) != 0)
 	to->speed = from->speed;
     if ((transfer & CLIMB_SET) != 0)
@@ -292,6 +328,18 @@ void gps_merge_fix(struct gps_fix_t *to,
 	to->epv = from->epv;
     if ((transfer & SPEEDERR_SET) != 0)
 	to->eps = from->eps;
+    if ((transfer & ECEF_SET) != 0) {
+	to->ecef.x = from->ecef.x;
+	to->ecef.y = from->ecef.y;
+	to->ecef.z = from->ecef.z;
+	to->ecef.pAcc = from->ecef.pAcc;
+    }
+    if ((transfer & VECEF_SET) != 0) {
+	to->ecef.vx = from->ecef.vx;
+	to->ecef.vy = from->ecef.vy;
+	to->ecef.vz = from->ecef.vz;
+	to->ecef.vAcc = from->ecef.vAcc;
+    }
 }
 
 /* NOTE: timestamp_t is a double, so this is only precise to
@@ -452,7 +500,7 @@ timestamp_t iso8601_to_unix(char *isotime)
 }
 
 /* *INDENT-OFF* */
-char *unix_to_iso8601(timestamp_t fixtime, /*@ out @*/
+char *unix_to_iso8601(timestamp_t fixtime,
 				     char isotime[], size_t len)
 /* Unix UTC time to ISO8601, no timezone adjustment */
 /* example: 2007-12-11T23:38:51.033Z */
@@ -532,7 +580,7 @@ double earth_distance_and_bearings(double lat1, double lon1, double lat2, double
 	c_SqA = 1 - s_A * s_A;
 	c_2SM = c_S - 2 * s_U1 * s_U2 / c_SqA;
 
-	if (isnan(c_2SM))
+	if (0 == isfinite(c_2SM))
 	    c_2SM = 0;
 
 	C = f / 16 * c_SqA * (4 + f * (4 - 3 * c_SqA));

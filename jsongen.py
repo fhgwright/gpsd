@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 #
 # This file is Copyright (c) 2010 by the GPSD project
-# BSD terms apply: see the file COPYING in the distribution root for details.
+# SPDX-License-Identifier: BSD-2-clause
 #
 # Never hand-hack what you can generate...
 #
@@ -1015,6 +1015,7 @@ def generate(spec):
 """
     print(report)
 
+
 if __name__ == '__main__':
     try:
         # The --ais and --target= options are (required) placeholders.
@@ -1044,14 +1045,11 @@ if __name__ == '__main__':
  */
  #define NITEMS(x) (int)(sizeof(x)/sizeof(x[0]))
 
-/*@ -fullinitblock */
-
 """)
         outboard = []
         for description in spec:
             generate(description)
         print("""
-/*@ +fullinitblock */
 
 /* Generated code ends. */
 """)
