@@ -383,7 +383,8 @@ for key, value in os.environ.items():
 
 # Placeholder so we can kluge together something like VPATH builds.
 # $SRCDIR replaces occurrences for $(srcdir) in the autotools build.
-env['SRCDIR'] = '.'
+# scons can get confused if this is not a full path
+env['SRCDIR'] = os.getcwd()
 
 # We may need to force slow regression tests to get around race
 # conditions in the pty layer, especially on a loaded machine.
