@@ -1907,7 +1907,7 @@ if python_progs:
     verenv = env['ENV'].copy()
     verenv['DISPLAY'] = ''  # Avoid launching X11 in X11 progs
     for prog in python_progs:
-        vchk += '$SRCDIR/%s -V\n' % prog
+        vchk += '$PYTHON $SRCDIR/%s -V\n' % prog
     python_versions = Utility('python-versions', [python_progs], vchk,
                               ENV=verenv)
 
