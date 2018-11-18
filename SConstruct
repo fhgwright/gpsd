@@ -1367,6 +1367,7 @@ if not env['python']:
     python_progs = []
 else:
     python_progs = ["gegps", "gpscat", "gpsfake", "gpsprof", "ubxtool", "zerk"]
+    python_deps = {'gpscat': 'packet'}
 
     if env['xgps']:
         # check for pycairo
@@ -1389,6 +1390,8 @@ else:
 
     if env['xgps']:
         python_progs.extend(["xgps", "xgpsspeed"])
+        python_deps['xgps'] = 'clienthelpers'
+
     python_modules = Glob('gps/*.py')
 
     # Build Python binding
@@ -1472,6 +1475,11 @@ else:
             )
         python_compiled_libs[ext] = python_env.SharedLibrary(
             ext, python_objects[ext])
+
+    # Make sure we know about compiled dependencies
+    for prog, dep in python_deps.items():
+        env.Depends(prog, python_compiled_libs['gps' + os.sep + dep])
+
     # Make PEP 241 Metadata 1.0.
     # Why not PEP 314 (V1.1) or PEP 345 (V1.2)?
     # V1.2 and V1.2 require a Download-URL to an installable binary
