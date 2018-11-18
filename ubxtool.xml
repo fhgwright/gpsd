@@ -34,6 +34,7 @@ BSD terms apply: see the file COPYING in the distribution root for details.
    </arg>
    <arg choice='opt'>-h </arg>
    <arg choice='opt'>-m <replaceable>mode</replaceable></arg>
+   <arg choice='opt'>-P <replaceable>protver</replaceable></arg>
    <arg choice='opt'>-p <replaceable>preset</replaceable></arg>
    <arg choice='opt'>-R <replaceable>rawfile</replaceable></arg>
    <arg choice='opt'>-r </arg>
@@ -186,6 +187,14 @@ a usage message and exit.</para>
     </listitem>
    </varlistentry>
    <varlistentry>
+    <term>-P protver</term>
+    <listitem>
+     <para>Sets the protocol version to use for sending commands.  Minimum
+10 (ublox 5).  Maximum 27 (u-blox 9)
+</para>
+    </listitem>
+   </varlistentry>
+   <varlistentry>
     <term>-p PRESET</term>
     <listitem>
      <para>Send a preset command the GPS.  Accepts one parameter, PRESET,
@@ -228,6 +237,12 @@ after the GPS acknowledges the command, unless the -W is given.
        <term>NAV5</term>
        <listitem>
         <para>Poll the Nav Engines settings (UBX-CFG-NAV6.</para>
+       </listitem>
+      </varlistentry>
+      <varlistentry>
+       <term>RXM-RAWX</term>
+       <listitem>
+        <para>Poll UBX-RXM-RAWX message.</para>
        </listitem>
       </varlistentry>
       <varlistentry>
