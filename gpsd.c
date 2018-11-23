@@ -3,13 +3,14 @@
  * select loop, and user command handling lives here.
  *
  * This file is Copyright (c) 2010 by the GPSD project
- * BSD terms apply: see the file COPYING in the distribution root for details.
+ * SPDX-License-Identifier: BSD-2-clause
  */
 
 #ifdef __linux__
 /* FreeBSD chokes on this */
 /* nice() needs _XOPEN_SOURCE, 500 means X/Open 1995 */
-#define _XOPEN_SOURCE 500
+/* Ubuntu isfinite() needs _XOPEN_SOURCE, 600 means X/Open 2004 */
+#define _XOPEN_SOURCE 600
 /* setgroups() needs _DEFAULT_SOURCE or _BSD_SOURCE (glibc-dependent) */
 #define _DEFAULT_SOURCE
 #define _BSD_SOURCE
@@ -517,10 +518,10 @@ static int passivesocks(char *service, char *tcp_or_udp,
 
 struct subscriber_t
 {
-    int fd;			/* client file descriptor. -1 if unused */
-    time_t active;		/* when subscriber last polled for data */
-    struct policy_t policy;	/* configurable bits */
-    pthread_mutex_t mutex;	/* serialize access to fd */
+    int fd;			  /* client file descriptor. -1 if unused */
+    time_t active;		  /* when subscriber last polled for data */
+    struct gps_policy_t policy;	  /* configurable bits */
+    pthread_mutex_t mutex;	  /* serialize access to fd */
 };
 
 #define subscribed(sub, devp)    (sub->policy.watcher && (sub->policy.devpath[0]=='\0' || strcmp(sub->policy.devpath, devp->gpsdata.dev.path)==0))
@@ -784,6 +785,41 @@ bool gpsd_add_device(const char *device_name, bool flag_nowait)
     return ret;
 }
 
+/* convert hex to binary, write it, unchanged, to GPS */
+static int write_gps(char *device, char *hex) {
+    struct gps_device_t *devp;
+    size_t len;
+    int st;
+
+    if ((devp = find_device(device)) == NULL) {
+	gpsd_log(&context.errout, LOG_INF, "GPS <=: %s not active\n", device);
+	return 1;
+    }
+    if (devp->context->readonly || (devp->sourcetype <= source_blockdev)) {
+	gpsd_log(&context.errout, LOG_WARN,
+		 "GPS <=: attempted to write to a read-only device\n");
+	return 1;
+    }
+
+    len = strlen(hex);
+    /* NOTE: this destroys the original buffer contents */
+    st = gpsd_hexpack(hex, hex, len);
+    if (st <= 0) {
+	gpsd_log(&context.errout, LOG_INF,
+		 "GPS <=: invalid hex string (error %d).\n", st);
+	return 1;
+    }
+    gpsd_log(&context.errout, LOG_INF,
+	     "GPS <=: writing %d bytes fromhex(%s) to %s\n",
+	     st, hex, device);
+    if (write(devp->gpsdata.gps_fd, hex, (size_t) st) <= 0) {
+	gpsd_log(&context.errout, LOG_WARN,
+		 "GPS <=: write to device failed\n");
+	return 1;
+    }
+    return 0;
+}
+
 #ifdef CONTROL_SOCKET_ENABLE
 static char *snarfline(char *p, char **out)
 /* copy the rest of the command line, before CR-LF */
@@ -884,6 +920,7 @@ static void handle_control(int sfd, char *buf)
     } else if (buf[0] == '&') {
 	/* split line after & into dev=hexdata, send unpacked hexdata to dev */
 	char *eq;
+
 	(void)snarfline(buf + 1, &stash);
 	eq = strchr(stash, '=');
 	if (eq == NULL) {
@@ -892,44 +929,12 @@ static void handle_control(int sfd, char *buf)
 		     sfd);
 	    ignore_return(write(sfd, "ERROR\n", 6));
 	} else {
-	    size_t len;
 	    *eq++ = '\0';
-	    len = strlen(eq) + 5;
-	    if ((devp = find_device(stash)) != NULL) {
-		if (devp->context->readonly || (devp->sourcetype <= source_blockdev)) {
-		    gpsd_log(&context.errout, LOG_WARN,
-			     "<= control(%d): attempted to write to a read-only device\n",
-			     sfd);
-		    ignore_return(write(sfd, "ERROR\n", 6));
-                } else {
-		    int st;
-                    /* NOTE: this destroys the original buffer contents */
-                    st = gpsd_hexpack(eq, eq, len);
-                    if (st <= 0) {
-                        gpsd_log(&context.errout, LOG_INF,
-				 "<= control(%d): invalid hex string (error %d).\n",
-				 sfd, st);
-                        ignore_return(write(sfd, "ERROR\n", 6));
-                    } else {
-                        gpsd_log(&context.errout, LOG_INF,
-				 "<= control(%d): writing %d bytes fromhex(%s) to %s\n",
-				 sfd, st, eq, stash);
-                        if (write(devp->gpsdata.gps_fd, eq, (size_t) st) <= 0) {
-                            gpsd_log(&context.errout, LOG_WARN,
-				     "<= control(%d): write to device failed\n",
-				     sfd);
-                            ignore_return(write(sfd, "ERROR\n", 6));
-                        } else {
-                            ignore_return(write(sfd, "OK\n", 3));
-                        }
-                    }
-		}
-	    } else {
-		gpsd_log(&context.errout, LOG_INF,
-			 "<= control(%d): %s not active\n", sfd,
-			 stash);
+	    if (0 == write_gps(stash, eq)) {
+		ignore_return(write(sfd, "OK\n", 3));
+            } else {
 		ignore_return(write(sfd, "ERROR\n", 6));
-	    }
+            }
 	}
     } else if (strstr(buf, "?devices")==buf) {
 	/* write back devices list followed by OK */
@@ -990,6 +995,7 @@ static bool awaken(struct gps_device_t *device)
 }
 
 #ifdef RECONFIGURE_ENABLE
+#if __UNUSED_RECONFIGURE__
 static bool privileged_user(struct gps_device_t *device)
 /* is this channel privileged to change a device's behavior? */
 {
@@ -1008,6 +1014,7 @@ static bool privileged_user(struct gps_device_t *device)
      */
     return subcount <= 1;
 }
+#endif /* __UNUSED_RECONFIGURE__ */
 
 static void set_serial(struct gps_device_t *device,
 		       speed_t speed, char *modestring)
@@ -1113,15 +1120,13 @@ static void handle_request(struct subscriber_t *sub,
     struct gps_device_t *devp;
     const char *end = NULL;
 
-    if (buf[0] == '?')
-	++buf;
-    if (str_starts_with(buf, "DEVICES;")) {
-	buf += 8;
+    if (str_starts_with(buf, "?DEVICES;")) {
+	buf += 9;
 	json_devicelist_dump(reply, replylen);
-    } else if (str_starts_with(buf, "WATCH")
-	       && (buf[5] == ';' || buf[5] == '=')) {
+    } else if (str_starts_with(buf, "?WATCH")
+	       && (buf[6] == ';' || buf[6] == '=')) {
 	const char *start = buf;
-	buf += 5;
+	buf += 6;
 	if (*buf == ';') {
 	    ++buf;
 	} else {
@@ -1148,8 +1153,9 @@ static void handle_request(struct subscriber_t *sub,
 			if (allocated_device(devp)) {
 			    (void)awaken(devp);
 			    if (devp->sourcetype == source_gpsd) {
-				(void)gpsd_write(devp, "?", 1);
-				(void)gpsd_write(devp, start, (size_t)(end-start));
+			        /* forward to master gpsd */
+				(void)gpsd_write(devp, start,
+				                 (size_t)(end-start));
 			    }
 			}
 		} else {
@@ -1163,7 +1169,6 @@ static void handle_request(struct subscriber_t *sub,
 			goto bailout;
 		    } else if (awaken(devp)) {
 			if (devp->sourcetype == source_gpsd) {
-			    (void)gpsd_write(devp, "?", 1);
 			    (void)gpsd_write(devp, start, (size_t)(end-start));
 			}
 		    } else {
@@ -1181,10 +1186,10 @@ static void handle_request(struct subscriber_t *sub,
 	json_devicelist_dump(reply + strlen(reply), replylen - strlen(reply));
 	json_watch_dump(&sub->policy,
 			reply + strlen(reply), replylen - strlen(reply));
-    } else if (str_starts_with(buf, "DEVICE")
-	       && (buf[6] == ';' || buf[6] == '=')) {
+    } else if (str_starts_with(buf, "?DEVICE")
+	       && (buf[7] == ';' || buf[7] == '=')) {
 	struct devconfig_t devconf;
-	buf += 6;
+	buf += 7;
 	devconf.path[0] = '\0';	/* initially, no device selection */
 	if (*buf == ';') {
 	    ++buf;
@@ -1244,11 +1249,7 @@ static void handle_request(struct subscriber_t *sub,
 		    }
 		    /* we should have exactly one device now */
 		}
-		if (!privileged_user(device))
-		    str_appendf(reply, replylen,
-				   "{\"class\":\"ERROR\",\"message\":\"Multiple subscribers, cannot change control bits on %s.\"}\r\n",
-				   device->gpsdata.dev.path);
-		else if (device->device_type == NULL)
+		if (device->device_type == NULL)
 		    str_appendf(reply, replylen,
 				   "{\"class\":\"ERROR\",\"message\":\"Type of %s is unknown.\"}\r\n",
 				   device->gpsdata.dev.path);
@@ -1267,7 +1268,7 @@ static void handle_request(struct subscriber_t *sub,
 			devconf.stopbits = device->gpsdata.dev.stopbits;
 		    if (devconf.stopbits == DEVDEFAULT_STOPBITS)
 			devconf.stopbits = device->gpsdata.dev.stopbits;
-		    if (isnan(devconf.cycle))
+		    if (0 == isfinite(devconf.cycle))
 			devconf.cycle = device->gpsdata.dev.cycle;
 
 		    /* now that channel is selected, apply changes */
@@ -1288,6 +1289,9 @@ static void handle_request(struct subscriber_t *sub,
 			&& dt->rate_switcher != NULL)
 			if (dt->rate_switcher(device, devconf.cycle))
 			    device->gpsdata.dev.cycle = devconf.cycle;
+	            if ('\0' != devconf.hexdata[0]) {
+			write_gps(device->gpsdata.dev.path, devconf.hexdata);
+		    }
 		}
 	    }
 #else /* RECONFIGURE_ENABLE */
@@ -1307,10 +1311,10 @@ static void handle_request(struct subscriber_t *sub,
 				 reply + strlen(reply),
 				 replylen - strlen(reply));
 	    }
-    } else if (str_starts_with(buf, "POLL;")) {
+    } else if (str_starts_with(buf, "?POLL;")) {
 	char tbuf[JSON_DATE_MAX+1];
 	int active = 0;
-	buf += 5;
+	buf += 6;
 	for (devp = devices; devp < devices + MAX_DEVICES; devp++)
 	    if (allocated_device(devp) && subscribed(sub, devp))
 		if ((devp->observed & GPS_TYPEMASK) != 0)
@@ -1357,8 +1361,8 @@ static void handle_request(struct subscriber_t *sub,
 	}
 	str_rstrip_char(reply, ',');
 	(void)strlcat(reply, "]}\r\n", replylen);
-    } else if (str_starts_with(buf, "VERSION;")) {
-	buf += 8;
+    } else if (str_starts_with(buf, "?VERSION;")) {
+	buf += 9;
 	json_version_dump(reply, replylen);
     } else {
 	const char *errend;
@@ -1554,7 +1558,7 @@ static void all_reports(struct gps_device_t *device, gps_mask_t changed)
         /* many GPS spew random times until a valid GPS fix */
         /* allow override with -r optin */
 	//gpsd_log(&context.errout, LOG_PROG, "NTP: no fix\n");
-    } else if (isnan(device->newdata.time)) {
+    } else if (0 == isfinite(device->newdata.time)) {
 	//gpsd_log(&context.errout, LOG_PROG, "NTP: bad new time\n");
 #if defined(PPS_ENABLE)
     } else if (device->newdata.time <= device->pps_thread.fix_in.real.tv_sec) {
@@ -1691,8 +1695,10 @@ static void all_reports(struct gps_device_t *device, gps_mask_t changed)
 }
 
 #ifdef SOCKET_EXPORT_ENABLE
+/* Execute GPSD requests (?POLL, ?WATCH, etc.) from a buffer.
+ * The entire request must be in the buffer.
+ */
 static int handle_gpsd_request(struct subscriber_t *sub, const char *buf)
-/* execute GPSD requests from a buffer */
 {
     char reply[GPS_JSON_RESPONSE_MAX + 1];
 

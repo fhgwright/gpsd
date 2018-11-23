@@ -32,7 +32,7 @@
  * unhappy things will occur on the next rollover.
  *
  * This file is Copyright (c) 2010 by the GPSD project
- * BSD terms apply: see the file COPYING in the distribution root for details.
+ * SPDX-License-Identifier: BSD-2-clause
  */
 
 #include <stdio.h>
@@ -453,13 +453,14 @@ static gps_mask_t handle_0xb1(struct gps_device_t *session)
     hdop = getub(buf, 43);
     vdop = getub(buf, 44);
     tdop = getub(buf, 45);
-    tfom = getub(buf, 46);
+    tfom = getub(buf, 46);    /* tfom == 10 * TDOP */
 
     /* Get two-sigma horizontal circular error estimate */
     eph = fom / 100.0 * 1.96;
     /* approximate epx and epy errors from it */
     session->newdata.epx = session->newdata.epy = eph / sqrt(2);
-    session->newdata.ept = tfom * 1.96 /*Two sigma */ ;
+    /* this next does not seem a correct way to get to seconds */
+    session->newdata.ept = tfom * 1.96; /* Two sigma */
 
     if (gdop != DOP_UNDEFINED)
 	session->gpsdata.dop.gdop = gdop / 10.0;
@@ -614,9 +615,8 @@ static gps_mask_t handle_0x81(struct gps_device_t *session)
     int32_t Omegadot = getles3224_be(buf, 78);
     /* Question: What is the proper way of shifting a signed int 2 bits to
      * the right, preserving sign? Answer: integer division by 4. */
-    int16_t idot =
-	(int16_t) (((getles16_be(buf, 82) & 0xfffc) /
-		    4) | (getub(buf, 82) & 80 ? 0xc000 : 0x0000));
+    int16_t idot = (int16_t) (((getles16_be(buf, 82) & 0xfffc) / 4) |
+                              ((getub(buf, 82) & 80) ? 0xc000 : 0x0000));
     session->context->gps_week = (unsigned short)wn;
     session->context->gps_tow = (double)(toc * SF_TOC);
     /* leap second? */

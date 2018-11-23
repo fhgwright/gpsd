@@ -4,7 +4,7 @@
  * To do: Support for GPGLL, GPGBS, GPZDA, PASHR NMEA sentences.
  *
  * This file is Copyright (c) 2010 by the GPSD project
- * BSD terms apply: see the file COPYING in the distribution root for details.
+ * SPDX-License-Identifier: BSD-2-clause
  */
 
 /* for vsnprintf() FreeBSD wants __ISO_C_VISIBLE >= 1999 */
@@ -156,7 +156,7 @@ static void cooked_pvt(void)
 {
     char scr[128];
 
-    if (isnan(session.gpsdata.fix.time) == 0) {
+    if (isfinite(session.gpsdata.fix.time) != 0) {
 	(void)unix_to_iso8601(session.gpsdata.fix.time, scr, sizeof(scr));
     } else
 	(void)snprintf(scr, sizeof(scr), "n/a");
@@ -164,7 +164,7 @@ static void cooked_pvt(void)
 
 
     if (session.gpsdata.fix.mode >= MODE_2D
-	&& isnan(session.gpsdata.fix.latitude) == 0) {
+	&& isfinite(session.gpsdata.fix.latitude) != 0) {
 	(void)snprintf(scr, sizeof(scr), "%s %c",
 		       deg_to_str(deg_ddmmss,
 				  fabs(session.gpsdata.fix.latitude)),
@@ -174,7 +174,7 @@ static void cooked_pvt(void)
     (void)mvwprintw(cookedwin, 1, 37, "%-17s", scr);
 
     if (session.gpsdata.fix.mode >= MODE_2D
-	&& isnan(session.gpsdata.fix.longitude) == 0) {
+	&& isfinite(session.gpsdata.fix.longitude) != 0) {
 	(void)snprintf(scr, sizeof(scr), "%s %c",
 		       deg_to_str(deg_ddmmss,
 				  fabs(session.gpsdata.fix.longitude)),

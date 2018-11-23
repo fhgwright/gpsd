@@ -1,6 +1,6 @@
 /*
  * This file is Copyright (c) 2010 by the GPSD project
- * BSD terms apply: see the file COPYING in the distribution root for details.
+ * SPDX-License-Identifier: BSD-2-clause
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -551,7 +551,7 @@ static void decode(FILE *fpin, FILE*fpout)
 /* sensor data on fpin to dump format on fpout */
 {
     struct gps_device_t session;
-    struct policy_t policy;
+    struct gps_policy_t policy;
     size_t minima[PACKET_TYPES+1];
 #if defined(SOCKET_EXPORT_ENABLE) || defined(AIVDM_ENABLE)
     char buf[GPS_JSON_RESPONSE_MAX * 4];
@@ -649,7 +649,7 @@ static void encode(FILE *fpin, FILE *fpout)
 /* JSON format on fpin to JSON on fpout - idempotency test */
 {
     char inbuf[BUFSIZ];
-    struct policy_t policy;
+    struct gps_policy_t policy;
     struct gps_device_t session;
     int lineno = 0;
 

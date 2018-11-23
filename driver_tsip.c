@@ -10,7 +10,7 @@
  * unhappy things will occur on the next rollover.
  *
  * This file is Copyright (c) 2010 by the GPSD project
- * BSD terms apply: see the file COPYING in the distribution root for details.
+ * SPDX-License-Identifier: BSD-2-clause
  */
 
 #ifdef __linux__
@@ -134,7 +134,7 @@ static gps_mask_t tsip_parse_input(struct gps_device_t *session)
     uint8_t u1, u2, u3, u4, u5, u6, u7, u8, u9, u10;
     int16_t s1, s2, s3, s4;
     int32_t sl1, sl2, sl3;
-    uint32_t ul1, ul2;
+    uint32_t ul1, ul2, ul3;
     float f1, f2, f3, f4, f5;
     double d1, d2, d3, d4, d5;
     time_t now;
@@ -202,7 +202,7 @@ static gps_mask_t tsip_parse_input(struct gps_device_t *session)
 		u4 = getub(buf, 4); /* Build number */
 		u5 = getub(buf, 5); /* Month */
 		u6 = getub(buf, 6); /* Day */
-		s1 = (int16_t)getbeu16(buf, 7); /* Year */
+		ul1 = getbeu16(buf, 7); /* Year */
 		u7 = getub(buf, 9); /* Length of first module name */
 		for (i=0; i < (int)u7; i++) {
 		    buf2[i] = (char)getub(buf, 10+i); /* Product name in ASCII */
@@ -210,8 +210,8 @@ static gps_mask_t tsip_parse_input(struct gps_device_t *session)
 		buf2[i] = '\0';
 
 		(void)snprintf(session->subtype, sizeof(session->subtype),
-			       "sw %u %u %u %02u.%02u.%04u %s",
-			       u2, u3, u4, u6, u5, s1, buf2);
+			       "sw %u %u %u %02u.%02u.%04u %.62s",
+			       u2, u3, u4, u6, u5, ul1, buf2);
 		gpsd_log(&session->context->errout, LOG_INF,
 			 "Software version: %s\n",
 			 session->subtype);
@@ -222,9 +222,9 @@ static gps_mask_t tsip_parse_input(struct gps_device_t *session)
 		ul1 = getbeu32(buf, 1); /* Serial number */
 		u2 = getub(buf, 5); /* Build day */
 		u3 = getub(buf, 6); /* Build month */
-		s1 = (int16_t)getbeu16(buf, 7); /* Build year */
+		ul2 = getbeu16(buf, 7); /* Build year */
 		u4 = getub(buf, 6); /* Build hour */
-		s2 = (int16_t)getbeu16(buf, 10); /* Hardware Code */
+		ul3 = getbeu16(buf, 10); /* Hardware Code */
 		u5 = getub(buf, 12); /* Length of Hardware ID */
 		/* coverity_submit[tainted_data] */
 		for (i=0; i < (int)u5; i++) {
@@ -233,8 +233,8 @@ static gps_mask_t tsip_parse_input(struct gps_device_t *session)
 		buf2[i] = '\0';
 
 		(void)snprintf(session->subtype, sizeof(session->subtype),
-			       "hw %u %02u.%02u.%04u %02u %u %s",
-			       ul1, u2, u3, s1, u4, s2, buf2);
+			       "hw %u %02u.%02u.%04u %02u %u %.48s",
+			       ul1, u2, u3, ul2, u4, ul3, buf2);
 		gpsd_log(&session->context->errout, LOG_INF,
 			 "Hardware version: %s\n",
 			 session->subtype);

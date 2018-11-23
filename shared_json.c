@@ -11,7 +11,7 @@ the daemon and the client library.
 PERMISSIONS
   Written by Eric S. Raymond, 2009
   This file is Copyright (c) 2010 by the GPSD project
-  BSD terms apply: see the file COPYING in the distribution root for details.
+  SPDX-License-Identifier: BSD-2-clause
 
 ***************************************************************************/
 
@@ -41,6 +41,8 @@ int json_device_read(const char *buf,
 	                                .len = sizeof(dev->driver)},
 	{"subtype",    t_string,     .addr.string  = dev->subtype,
 	                                .len = sizeof(dev->subtype)},
+        {"hexdata",    t_string,     .addr.string  = dev->hexdata,
+	                                .len = sizeof(dev->hexdata)},
 	{"native",     t_integer,    .addr.integer = &dev->driver_mode,
 				        .dflt.integer = DEVDEFAULT_NATIVE},
 	{"bps",	       t_uinteger,   .addr.uinteger = &dev->baudrate,
@@ -63,7 +65,7 @@ int json_device_read(const char *buf,
     if (status != 0)
 	return status;
 
-    if (isnan(dev->activated)!=0) {
+    if (isfinite(dev->activated) == 0) {
 	if (tbuf[0] == '\0')
 	    dev->activated = NAN;
 	else
@@ -74,7 +76,7 @@ int json_device_read(const char *buf,
 }
 
 int json_watch_read(const char *buf,
-		    struct policy_t *ccp,
+		    struct gps_policy_t *ccp,
 		    const char **endptr)
 {
     bool dummy_pps_flag;

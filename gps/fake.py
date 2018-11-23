@@ -131,12 +131,14 @@ def GetDelay(slow=False):
 
 
 class TestError(BaseException):
+    "Class TestError"
     def __init__(self, msg):
         super(TestError, self).__init__()
         self.msg = msg
 
 
 class TestLoadError(TestError):
+    "Class TestLoadError"
     pass
 
 
@@ -232,16 +234,19 @@ class TestLoad(object):
 
 
 class PacketError(TestError):
+    "Class PacketError"
     pass
 
 
 class FakeGPS(object):
+    "Class FakeGPS"
     def __init__(self, testload, progress=None):
-        self.testload = testload
-        self.progress = progress
+        self.exhausted = 0
         self.go_predicate = lambda: True
-        self.readers = 0
         self.index = 0
+        self.progress = progress
+        self.readers = 0
+        self.testload = testload
         self.progress("gpsfake: %s provides %d sentences\n"
                       % (self.testload.name, len(self.testload.sentences)))
 
@@ -297,8 +302,8 @@ class FakePTY(FakeGPS):
         }
         (self.fd, self.slave_fd) = pty.openpty()
         self.byname = os.ttyname(self.slave_fd)
-        os.chmod(self.byname, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP
-                 | stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH)
+        os.chmod(self.byname, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP |
+                 stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH)
         (iflag, oflag, cflag, lflag, ispeed, ospeed, cc) = termios.tcgetattr(
             self.slave_fd)
         cc[termios.VMIN] = 1
@@ -306,8 +311,8 @@ class FakePTY(FakeGPS):
         cflag |= termios.CREAD | termios.CLOCAL
         iflag = oflag = lflag = 0
         iflag &= ~ (termios.PARMRK | termios.INPCK)
-        cflag &= ~ (termios.CSIZE | termios.CSTOPB | termios.PARENB
-                    | termios.PARODD)
+        cflag &= ~ (termios.CSIZE | termios.CSTOPB | termios.PARENB |
+                    termios.PARODD)
         if databits == 7:
             cflag |= termios.CS7
         else:
@@ -432,9 +437,9 @@ class FakeUDP(FakeGPS):
                  ipaddr, port,
                  progress=None):
         super(FakeUDP, self).__init__(testload, progress)
+        self.byname = "udp://" + ipaddr + ":" + str(port)
         self.ipaddr = ipaddr
         self.port = port
-        self.byname = "udp://" + ipaddr + ":" + str(port)
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     def read(self):
@@ -452,6 +457,7 @@ class FakeUDP(FakeGPS):
 
 
 class SubprogramError(TestError):
+    "Class SubprogramError"
     def __str__(self):
         return repr(self.msg)
 
@@ -526,6 +532,7 @@ class SubprogramInstance(object):
 
 
 class DaemonError(SubprogramError):
+    "Class DaemonError"
     pass
 
 
@@ -534,6 +541,7 @@ class DaemonInstance(SubprogramInstance):
     ERROR = DaemonError
 
     def __init__(self, control_socket=None):
+        self.sock = None
         super(DaemonInstance, self).__init__()
         if control_socket:
             self.control_socket = control_socket
@@ -590,6 +598,7 @@ class DaemonInstance(SubprogramInstance):
 
 
 class TestSessionError(TestError):
+    "class TestSessionError"
     # why does testSessionError() return pass? "
     pass
 
@@ -625,6 +634,7 @@ class TestSession(object):
         self.threadlock = None
 
     def spawn(self):
+        "Spawn daemon"
         for sig in (signal.SIGQUIT, signal.SIGINT, signal.SIGTERM):
             signal.signal(sig, lambda unused, dummy: self.cleanup())
         self.daemon.spawn(background=True, prefix=self.prefix, port=self.port,
@@ -728,9 +738,9 @@ class TestSession(object):
                 had_output = False
                 chosen = self.choose()
                 if isinstance(chosen, FakeGPS):
-                    if ((chosen.exhausted
-                         and (time.time() - chosen.exhausted > TEST_TIMEOUT)
-                         and chosen.byname in self.fakegpslist)):
+                    if (((chosen.exhausted and
+                         (time.time() - chosen.exhausted > TEST_TIMEOUT) and
+                         chosen.byname in self.fakegpslist))):
                         sys.stderr.write(
                             "Test timed out: increase WRITE_PAD = %s\n"
                             % GetDelay(self.slow))
@@ -752,9 +762,9 @@ class TestSession(object):
                         if not chosen.valid & gps.PACKET_SET:
                             continue
                         self.reporter(chosen.bresponse)
-                        if ((chosen.data["class"] == "DEVICE"
-                             and chosen.data["activated"] == 0
-                             and chosen.data["path"] in self.fakegpslist)):
+                        if ((chosen.data["class"] == "DEVICE" and
+                             chosen.data["activated"] == 0 and
+                             chosen.data["path"] in self.fakegpslist)):
                             self.gps_remove(chosen.data["path"])
                             self.progress(
                                 "gpsfake: GPS %s removed (notification)\n"
@@ -817,6 +827,7 @@ class TestSession(object):
             client.enqueued = commands
 
     def start(self):
+        "Start thread"
         self.threadlock = threading.Lock()
         threading.Thread(target=self.run)
 

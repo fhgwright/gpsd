@@ -1,7 +1,7 @@
 /* gps.h -- interface of the libgps library */
 /*
  * This file is Copyright (c) 2010 by the GPSD project
- * BSD terms apply: see the file COPYING in the distribution root for details.
+ * SPDX-License-Identifier: BSD-2-clause
  */
 #ifndef _GPSD_GPS_H_
 #define _GPSD_GPS_H_
@@ -36,11 +36,16 @@ extern "C" {
  *       structure has changed to make working with the satellites-used
  *       bits less confusing. (January 2015, release 3.12).
  * 6.1 - Add navdata_t for more (nmea2000) info.
+ * 7.0 - add gps_fix_t.ecef (February 2018)
+ *       changed prototype of gps_read() to add buffer parameters
+ *       increased length of devconfig_t.subtype
+ *       add gnssid:svid:sigid to satellite_t
+ *       add mtime to attitude_t
  */
-#define GPSD_API_MAJOR_VERSION	6	/* bump on incompatible changes */
-#define GPSD_API_MINOR_VERSION	1	/* bump on compatible changes */
+#define GPSD_API_MAJOR_VERSION	7	/* bump on incompatible changes */
+#define GPSD_API_MINOR_VERSION	0	/* bump on compatible changes */
 
-#define MAXCHANNELS	72	/* must be > 12 GPS + 12 GLONASS + 2 WAAS */
+#define MAXCHANNELS	120	/* u-blox 9 tracks 140 signals */
 #define MAXUSERDEVS	4	/* max devices per user */
 #define GPS_PATH_MAX	128	/* for names like /dev/serial/by-id/... */
 
@@ -83,7 +88,7 @@ struct gps_fix_t {
 #define MODE_NO_FIX	1	/* none */
 #define MODE_2D  	2	/* good for latitude/longitude */
 #define MODE_3D  	3	/* good for altitude/climb too */
-    double ept;		/* Expected time uncertainty */
+    double ept;		/* Expected time uncertainty, seconds */
     double latitude;	/* Latitude in degrees (valid if mode >= 2) */
     double epy;  	/* Latitude position uncertainty, meters */
     double longitude;	/* Longitude in degrees (valid if mode >= 2) */
@@ -96,25 +101,23 @@ struct gps_fix_t {
     double eps;		/* Speed uncertainty, meters/sec */
     double climb;       /* Vertical speed, meters/sec */
     double epc;		/* Vertical speed uncertainty */
+
+    double magnetic_track;  /* Course (relative to Magnetic North) */
+
+    /* ECEF data, all data in meters, and meters/second, or NaN */
+    struct {
+	double x, y, z; 	/* ECEF x, y, z */
+	double pAcc;            /* 3D Position Accuracy Estimate, likely SEP */
+	double vx, vy, vz;	/* ECEF x, y, z velocity */
+	double vAcc;            /* Velocity Accuracy Estimate, probably SEP */
+    } ecef;
 };
 
 /*
- * Satellite ID classes.
- * According to IS-GPS-200 Revision H paragraph 6.3.6, and earlier revisions
- * at least back to E, the upper bound of U.S. GPS PRNs is actually 64. However,
- * NMEA0183 only allocates 1-32 for U.S. GPS IDs; it uses 33-64 for IDs ub the
- * SBAS range.
- */
-#define GPS_PRN(n)	(((n) >= 1) && ((n) <= 32))	/* U.S. GPS satellite */
-#define GBAS_PRN(n)	((n) >= 64 && ((n) <= 119))	/* Other GNSS (GLONASS) and Ground Based Augmentation System (eg WAAS)*/
-#define SBAS_PRN(n)	((n) >= 120 && ((n) <= 158))	/* Satellite Based Augmentation System (eg GAGAN)*/
-#define GNSS_PRN(n)	((n) >= 159 && ((n) <= 210))	/* other GNSS (eg BeiDou) */
-
-/*
- * GLONASS birds reuse GPS PRNs.
- * It is an NMEA0183 convention to map them to pseudo-PRNs 65..96.
- * (some other programs push them to 33 and above).
- * The US GPS constellation plans to use the 33-63 range.
+ * Other GNSS birds reuse GPS PRNs.
+ * It is an NMEA0183 convention to map them to pseudo-PRNs 65..437.
+ * Very dependent on NMEA version.
+ * (some other GPS receivers push them to 33 and above).
  */
 #define GLONASS_PRN_OFFSET	64
 
@@ -1803,33 +1806,68 @@ struct ais_t
     };
 };
 
-/* basic data, per PRN, from GPGSA and GPGSV */
+/* basic data, per PRN, from GPGSA and GPGSV, or GPS binary messages */
+/* FIXME: u-blox 9 no longer uses PRN */
 struct satellite_t {
-    double ss;		/* signal-to-noise ratio (dB) */
+    double ss;		/* signal-to-noise ratio, 0 to 254 dB, -1 for n/a */
     bool used;		/* this satellite used in solution */
-    short PRN;		/* PRN of this satellite */
-    short elevation;	/* elevation of satellite */
-    short azimuth;	/* azimuth */
+    /* PRN of this satellite, 1 to 437, 0 for n/a
+     * sadly there is no standard, but many different implementations of
+     * how to code PRN
+     */
+    short PRN;
+    short elevation;	/* elevation of satellite, -90 to 90 deg, -91 for n/a */
+    short azimuth;	/* azimuth, 0 to 359 deg, -1 for n/a */
+    /* gnssid:svid:sigid, as defined by u-blox 8/9:
+     *  gnssid        svid (native PRN)
+     *  0 = GPS       1-32
+     *  1 = SBAS      120-158
+     *  2 = Galileo   1-36
+     *  3 - BeiDou    1-37
+     *  4 = IMES      1-10
+     *  5 = QZSS      1-5
+     *  6 = GLONASS   1-32, 22255
+     */
+    unsigned char gnssid;
+    /* ignore gnssid and sigid if svid is zero */
+    unsigned char svid;
+    /* sigid as defined by u-blox 9
+     * GPS:      0 = L1C/A, 3 = L2 CL, 4 = L2 CM
+     * Galileo:  0 = E1 C,  1 = E1 B,  5 = E5 bl, 6 = E5 bQ
+     * BeiDou:   0 = B1|D1, 1 = B1|D2, 2 = B2|D1, 3 = B2|D2
+     * QZSS:     0 = L1C/A
+     * GLONASS:  0 = L1 OF, 2 = L2 OF
+     *
+     * sigid as defined by NMEA 4.1
+     * GPS:      1 = L1C/A, 6 = L2 CL, 5 = L2 CM
+     * Galileo:  7 = E1 C,  7 = E1 B,  2 = E5 bl, 2 = E5 bQ
+     * BeiDou:   1 = B1|D1, 1 = B1|D2, 3 = B2|D1, 3 = B2|D2
+     * QZSS:     not defined
+     * GLONASS:  1 = L1 OF, 3 = L2 OF
+     */
+    unsigned char sigid;
+    unsigned char freqid;       /* The GLONASS (Only) frequency, 0 - 13 */
 };
 
 struct attitude_t {
-    double heading;
-    double pitch;
-    double roll;
-    double yaw;
-    double dip;
-    double mag_len; /* unitvector sqrt(x^2 + y^2 +z^2) */
-    double mag_x;
-    double mag_y;
-    double mag_z;
+    struct timespec	mtime;  /* time of measurement */
     double acc_len; /* unitvector sqrt(x^2 + y^2 +z^2) */
     double acc_x;
     double acc_y;
     double acc_z;
+    double depth;
+    double dip;
     double gyro_x;
     double gyro_y;
+    double heading;
+    double mag_len; /* unitvector sqrt(x^2 + y^2 +z^2) */
+    double mag_x;
+    double mag_y;
+    double mag_z;
+    double pitch;
+    double roll;
     double temp;
-    double depth;
+    double yaw;
     /* compass status -- TrueNorth (and any similar) devices only */
     char mag_st;
     char pitch_st;
@@ -1886,6 +1924,7 @@ struct version_t {
     char remote[GPS_PATH_MAX];		/* could be from a remote device */
 };
 
+#define HEXDATA_MAX 512                 /* hex encoded command buffer, max */
 struct devconfig_t {
     char path[GPS_PATH_MAX];
     int flags;
@@ -1894,7 +1933,9 @@ struct devconfig_t {
 #define SEEN_RTCM3	0x04
 #define SEEN_AIS 	0x08
     char driver[64];
-    char subtype[64];
+    char subtype[96];
+    /* a buffer to hold data to output to GPS */
+    char hexdata[HEXDATA_MAX];
     double activated;
     unsigned int baudrate, stopbits;	/* RS232 link parameters */
     char parity;			/* 'N', 'O', or 'E' */
@@ -1902,7 +1943,7 @@ struct devconfig_t {
     int driver_mode;    		/* is driver in native mode or not? */
 };
 
-struct policy_t {
+struct gps_policy_t {
     bool watcher;			/* is watcher mode on? */
     bool json;				/* requesting JSON? */
     bool nmea;				/* requesting dumping as NMEA? */
@@ -1997,7 +2038,10 @@ struct gps_data_t {
 #define PPS_SET 	(1llu<<33)
 #define NAVDATA_SET     (1llu<<34)
 #define OSCILLATOR_SET	(1llu<<35)
-#define SET_HIGH_BIT	36
+#define ECEF_SET	(1llu<<36)
+#define VECEF_SET	(1llu<<37)
+#define MAGNETIC_TRACK_SET (1llu<<38)
+#define SET_HIGH_BIT	39
     timestamp_t online;		/* NZ if GPS is on line, 0 if not.
 				 *
 				 * Note: gpsd clears this time when sentences
@@ -2038,7 +2082,7 @@ struct gps_data_t {
 
     struct devconfig_t dev;	/* device that shipped last update */
 
-    struct policy_t policy;	/* our listening policy */
+    struct gps_policy_t policy;	/* our listening policy */
 
     struct {
 	timestamp_t time;
@@ -2075,7 +2119,7 @@ extern int gps_open(const char *, const char *,
 		      struct gps_data_t *);
 extern int gps_close(struct gps_data_t *);
 extern int gps_send(struct gps_data_t *, const char *, ... );
-extern int gps_read(struct gps_data_t *);
+extern int gps_read(struct gps_data_t *, char *message, int message_len);
 extern int gps_unpack(char *, struct gps_data_t *);
 extern bool gps_waiting(const struct gps_data_t *, int);
 extern int gps_stream(struct gps_data_t *, unsigned int, void *);
@@ -2095,8 +2139,9 @@ int json_oscillator_read(const char *buf, struct gps_data_t *,
 
 extern void libgps_trace(int errlevel, const char *, ...);
 
-extern void gps_clear_fix(struct gps_fix_t *);
+extern void gps_clear_att(struct attitude_t *);
 extern void gps_clear_dop( struct dop_t *);
+extern void gps_clear_fix(struct gps_fix_t *);
 extern void gps_merge_fix(struct gps_fix_t *, gps_mask_t, struct gps_fix_t *);
 extern void gps_enable_debug(int, FILE *);
 extern const char *gps_maskdump(gps_mask_t);

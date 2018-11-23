@@ -33,7 +33,7 @@
  * packet_states.h
  *
  * This file is Copyright (c) 2010 by the GPSD project
- * BSD terms apply: see the file COPYING in the distribution root for details.
+ * SPDX-License-Identifier: BSD-2-clause
  */
 #include <stdio.h>
 #include <stdbool.h>
@@ -83,10 +83,18 @@ _proto__msg_navsol(struct gps_device_t *session, unsigned char *buf, size_t data
 
     /* extract ECEF navigation solution here */
     /* or extract the local tangential plane (ENU) solution */
-    [Px, Py, Pz, Vx, Vy, Vz] = GET_ECEF_FIX();
+    [session->newdata.ecef.x,
+    session->newdata.ecef.y,
+    session->newdata.ecef.z,
+    session->newdata.ecef.vx,
+    session->newdata.ecef.vy,
+    session->newdata.ecef.vz] = GET_ECEF_FIX();
     ecef_to_wgs84fix(&session->newdata,  &session->gpsdata.separation,
-		     Px, Py, Pz, Vx, Vy, Vz);
-    mask |= LATLON_SET | ALTITUDE_SET | SPEED_SET | TRACK_SET | CLIMB_SET  ;
+		     session->newdata.ecef.x, session->newdata.ecef.y,
+		     session->newdata.ecef.z, session->newdata.ecef.vx,
+		     session->newdata.ecef.vy, session->newdata.ecef.vz);
+    mask |= LATLON_SET | ALTITUDE_SET | SPEED_SET | TRACK_SET | CLIMB_SET
+            | ECEF_SET | VECEF_SET  ;
 
     session->newdata.epx = GET_LONGITUDE_ERROR();
     session->newdata.epy = GET_LATITUDE_ERROR();

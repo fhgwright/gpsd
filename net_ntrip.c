@@ -1,7 +1,7 @@
 /* net_ntrip.c -- gather and dispatch DGNSS data from Ntrip broadcasters
  *
  * This file is Copyright (c) 2010 by the GPSD project
- * BSD terms apply: see the file COPYING in the distribution root for details.
+ * SPDX-License-Identifier: BSD-2-clause
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -84,14 +84,17 @@ static void ntrip_str_parse(char *str, size_t len,
 	    hold->format = fmt_rtcm2_1;
 	else if (strcasecmp("RTCM 2.2", s) == 0)
 	    hold->format = fmt_rtcm2_2;
-	else if (strcasecmp("RTCM 2.3", s) == 0)
+	else if ((strcasecmp("RTCM2.3", s) == 0) ||
+	         (strcasecmp("RTCM 2.3", s) == 0))
 	    hold->format = fmt_rtcm2_3;
 	/* required for the SAPOS derver in Gemany, confirmed as RTCM2.3 */
 	else if (strcasecmp("RTCM1_", s) == 0)
 	    hold->format = fmt_rtcm2_3;
-	else if (strcasecmp("RTCM 3.0", s) == 0)
+	else if ((strcasecmp("RTCM 3", s) == 0) ||
+	         (strcasecmp("RTCM 3.0", s) == 0))
 	    hold->format = fmt_rtcm3_0;
-	else if (strcasecmp("RTCM 3.1", s) == 0)
+	else if ((strcasecmp("RTCM3.1", s) == 0) ||
+	         (strcasecmp("RTCM 3.1", s) == 0))
 	    hold->format = fmt_rtcm3_1;
 	else if (strcasecmp("RTCM 3.2", s) == 0)
 	    hold->format = fmt_rtcm3_2;

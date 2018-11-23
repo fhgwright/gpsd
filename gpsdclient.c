@@ -2,7 +2,7 @@
  * gpsdclient.c -- support functions for GPSD clients
  *
  * This file is Copyright (c) 2010 by the GPSD project
- * BSD terms apply: see the file COPYING in the distribution root for details.
+ * SPDX-License-Identifier: BSD-2-clause
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -320,7 +320,7 @@ float true2magnetic(double lat, double lon, double heading)
     }
 
     /* No negative headings. */
-    if (isnan(heading)== 0 && heading < 0.0)
+    if (isfinite(heading) != 0 && heading < 0.0)
 	heading += 360.0;
 
     return (heading);

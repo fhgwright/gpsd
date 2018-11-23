@@ -1,6 +1,6 @@
 /*
  * This file is Copyright (c) 2010 by the GPSD project
- * BSD terms apply: see the file COPYING in the distribution root for details.
+ * SPDX-License-Identifier: BSD-2-clause
  *
  * Driver for the iTalk binary protocol used by FasTrax
  *
@@ -35,9 +35,9 @@ static gps_mask_t decode_itk_navfix(struct gps_device_t *session,
 				    unsigned char *buf, size_t len)
 {
     unsigned short flags, pflags;
-    gps_mask_t mask = 0;
-    double epx, epy, epz, evx, evy, evz, eph;
+    double eph;
 
+    gps_mask_t mask = 0;
     if (len != 296) {
 	gpsd_log(&session->context->errout, LOG_PROG,
 		 "ITALK: bad NAV_FIX (len %zu, should be 296)\n",
@@ -63,15 +63,18 @@ static gps_mask_t decode_itk_navfix(struct gps_device_t *session,
 	(unsigned int)getleu32(buf, 7 + 84) / 1000.0);
     mask |= TIME_SET | NTPTIME_IS;
 
-    epx = (double)(getles32(buf, 7 + 96) / 100.0);
-    epy = (double)(getles32(buf, 7 + 100) / 100.0);
-    epz = (double)(getles32(buf, 7 + 104) / 100.0);
-    evx = (double)(getles32(buf, 7 + 186) / 1000.0);
-    evy = (double)(getles32(buf, 7 + 190) / 1000.0);
-    evz = (double)(getles32(buf, 7 + 194) / 1000.0);
+    session->newdata.ecef.x = (double)(getles32(buf, 7 + 96) / 100.0);
+    session->newdata.ecef.y = (double)(getles32(buf, 7 + 100) / 100.0);
+    session->newdata.ecef.z = (double)(getles32(buf, 7 + 104) / 100.0);
+    session->newdata.ecef.vx = (double)(getles32(buf, 7 + 186) / 1000.0);
+    session->newdata.ecef.vy = (double)(getles32(buf, 7 + 190) / 1000.0);
+    session->newdata.ecef.vz = (double)(getles32(buf, 7 + 194) / 1000.0);
     ecef_to_wgs84fix(&session->newdata, &session->gpsdata.separation,
-		     epx, epy, epz, evx, evy, evz);
-    mask |= LATLON_SET | ALTITUDE_SET | SPEED_SET | TRACK_SET | CLIMB_SET;
+		     session->newdata.ecef.x, session->newdata.ecef.y,
+		     session->newdata.ecef.z, session->newdata.ecef.vx,
+		     session->newdata.ecef.vy, session->newdata.ecef.vz);
+    mask |= LATLON_SET | ALTITUDE_SET | SPEED_SET | TRACK_SET | CLIMB_SET
+            | ECEF_SET | VECEF_SET;
     eph = (double)(getles32(buf, 7 + 252) / 100.0);
     /* eph is a circular error, sqrt(epx**2 + epy**2) */
     session->newdata.epx = session->newdata.epy = eph / sqrt(2);

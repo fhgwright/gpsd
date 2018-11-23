@@ -10,9 +10,17 @@ representations to libgps structures.
 PERMISSIONS
    Written by Eric S. Raymond, 2009
    This file is Copyright (c) 2010 by the GPSD project
-   BSD terms apply: see the file COPYING in the distribution root for details.
+   SPDX-License-Identifier: BSD-2-clause
 
 ***************************************************************************/
+
+#ifdef __linux__
+/* isfinite() needs _POSIX_C_SOURCE >= 200112L
+ * isnan(+Inf) is false, isfinite(+Inf) is false
+ * use isfinite() to make sure a float is valid
+ */
+#define _POSIX_C_SOURCE 200112L
+#endif /* __linux__ */
 
 #include <stdbool.h>
 #include <math.h>
@@ -50,17 +58,35 @@ static int json_tpv_read(const char *buf, struct gps_data_t *gpsdata,
 			         .dflt.real = NAN},
 	{"epv",    t_real,    .addr.real = &gpsdata->fix.epv,
 			         .dflt.real = NAN},
-	{"track",   t_real,   .addr.real = &gpsdata->fix.track,
+	{"track",  t_real,    .addr.real = &gpsdata->fix.track,
 			         .dflt.real = NAN},
-	{"speed",   t_real,   .addr.real = &gpsdata->fix.speed,
+	{"magtrack",  t_real,    .addr.real = &gpsdata->fix.magnetic_track,
+				 .dflt.real = NAN},
+	{"speed",  t_real,    .addr.real = &gpsdata->fix.speed,
 			         .dflt.real = NAN},
-	{"climb",   t_real,   .addr.real = &gpsdata->fix.climb,
+	{"climb",  t_real,    .addr.real = &gpsdata->fix.climb,
 			         .dflt.real = NAN},
 	{"epd",    t_real,    .addr.real = &gpsdata->fix.epd,
 			         .dflt.real = NAN},
 	{"eps",    t_real,    .addr.real = &gpsdata->fix.eps,
 			         .dflt.real = NAN},
 	{"epc",    t_real,    .addr.real = &gpsdata->fix.epc,
+			         .dflt.real = NAN},
+	{"ecefx",  t_real,    .addr.real = &gpsdata->fix.ecef.x,
+			         .dflt.real = NAN},
+	{"ecefy",  t_real,    .addr.real = &gpsdata->fix.ecef.y,
+			         .dflt.real = NAN},
+	{"ecefz",  t_real,    .addr.real = &gpsdata->fix.ecef.z,
+			         .dflt.real = NAN},
+	{"ecefvx", t_real,    .addr.real = &gpsdata->fix.ecef.vx,
+			         .dflt.real = NAN},
+	{"ecefvy", t_real,    .addr.real = &gpsdata->fix.ecef.vy,
+			         .dflt.real = NAN},
+	{"ecefvz", t_real,    .addr.real = &gpsdata->fix.ecef.vz,
+			         .dflt.real = NAN},
+	{"ecefpAcc", t_real,  .addr.real = &gpsdata->fix.ecef.vAcc,
+			         .dflt.real = NAN},
+	{"ecefvAcc", t_real,  .addr.real = &gpsdata->fix.ecef.pAcc,
 			         .dflt.real = NAN},
 	{"mode",   t_integer, .addr.integer = &gpsdata->fix.mode,
 			         .dflt.integer = MODE_NOT_SEEN},
@@ -111,11 +137,13 @@ static int json_sky_read(const char *buf, struct gps_data_t *gpsdata,
 {
     const struct json_attr_t json_attrs_satellites[] = {
 	/* *INDENT-OFF* */
-	{"PRN",	   t_short, STRUCTOBJECT(struct satellite_t, PRN)},
-	{"el",	   t_short, STRUCTOBJECT(struct satellite_t, elevation)},
-	{"az",	   t_short, STRUCTOBJECT(struct satellite_t, azimuth)},
+	{"PRN",	   t_short,   STRUCTOBJECT(struct satellite_t, PRN)},
+	{"el",	   t_short,   STRUCTOBJECT(struct satellite_t, elevation)},
+	{"az",	   t_short,   STRUCTOBJECT(struct satellite_t, azimuth)},
 	{"ss",	   t_real,    STRUCTOBJECT(struct satellite_t, ss)},
 	{"used",   t_boolean, STRUCTOBJECT(struct satellite_t, used)},
+	{"gnssid", t_ushort,  STRUCTOBJECT(struct satellite_t, gnssid)},
+	{"svid",   t_ushort,  STRUCTOBJECT(struct satellite_t, svid)},
 	/* *INDENT-ON* */
 	{NULL},
     };
@@ -151,10 +179,7 @@ static int json_sky_read(const char *buf, struct gps_data_t *gpsdata,
     };
     int status, i;
 
-    for (i = 0; i < MAXCHANNELS; i++) {
-	gpsdata->skyview[i].PRN = 0;
-	gpsdata->skyview[i].used = false;
-    }
+    memset(&gpsdata->skyview, 0, sizeof(gpsdata->skyview));
 
     status = json_read_object(buf, json_attrs_2, endptr);
     if (status != 0)
@@ -241,6 +266,8 @@ static int json_devicelist_read(const char *buf, struct gps_data_t *gpsdata,
 	{"flags",      t_integer,    STRUCTOBJECT(struct devconfig_t, flags)},
 	{"driver",     t_string,     STRUCTOBJECT(struct devconfig_t, driver),
 	                                .len = sizeof(gpsdata->devices.list[0].driver)},
+	{"hexdata",    t_string,     STRUCTOBJECT(struct devconfig_t, hexdata),
+	                                .len = sizeof(gpsdata->devices.list[0].hexdata)},
 	{"subtype",    t_string,     STRUCTOBJECT(struct devconfig_t, subtype),
 	                                .len = sizeof(gpsdata->devices.list[0].subtype)},
 	{"native",     t_integer,    STRUCTOBJECT(struct devconfig_t, driver_mode),
@@ -267,7 +294,7 @@ static int json_devicelist_read(const char *buf, struct gps_data_t *gpsdata,
     };
     int status;
 
-    memset(&gpsdata->devices, '\0', sizeof(gpsdata->devices));
+    memset(&gpsdata->devices, 0, sizeof(gpsdata->devices));
     status = json_read_object(buf, json_attrs_devices, endptr);
     if (status != 0) {
 	return status;
@@ -296,7 +323,7 @@ static int json_version_read(const char *buf, struct gps_data_t *gpsdata,
     };
     int status;
 
-    memset(&gpsdata->version, '\0', sizeof(gpsdata->version));
+    memset(&gpsdata->version, 0, sizeof(gpsdata->version));
     status = json_read_object(buf, json_attrs_version, endptr);
 
     return status;
@@ -315,7 +342,7 @@ static int json_error_read(const char *buf, struct gps_data_t *gpsdata,
     };
     int status;
 
-    memset(&gpsdata->error, '\0', sizeof(gpsdata->error));
+    memset(&gpsdata->error, 0, sizeof(gpsdata->error));
     status = json_read_object(buf, json_attrs_error, endptr);
     if (status != 0)
 	return status;
@@ -345,7 +372,7 @@ int json_toff_read(const char *buf, struct gps_data_t *gpsdata,
     };
     int status;
 
-    memset(&gpsdata->toff, '\0', sizeof(gpsdata->toff));
+    memset(&gpsdata->toff, 0, sizeof(gpsdata->toff));
     status = json_read_object(buf, json_attrs_toff, endptr);
     gpsdata->toff.real.tv_sec = (time_t)real_sec;
     gpsdata->toff.real.tv_nsec = (long)real_nsec;
@@ -381,7 +408,7 @@ int json_pps_read(const char *buf, struct gps_data_t *gpsdata,
     };
     int status;
 
-    memset(&gpsdata->pps, '\0', sizeof(gpsdata->pps));
+    memset(&gpsdata->pps, 0, sizeof(gpsdata->pps));
     status = json_read_object(buf, json_attrs_pps, endptr);
 
     /* This is good until GPS are more than nanosec accurate */
@@ -420,7 +447,7 @@ int json_oscillator_read(const char *buf, struct gps_data_t *gpsdata,
     };
     int status;
 
-    memset(&gpsdata->osc, '\0', sizeof(gpsdata->osc));
+    memset(&gpsdata->osc, 0, sizeof(gpsdata->osc));
     status = json_read_object(buf, json_attrs_osc, endptr);
 
     gpsdata->osc.running = running;
@@ -443,31 +470,33 @@ int libgps_json_unpack(const char *buf,
     if (str_starts_with(classtag, "\"class\":\"TPV\"")) {
 	status = json_tpv_read(buf, gpsdata, end);
 	gpsdata->set = STATUS_SET;
-	if (isnan(gpsdata->fix.time) == 0)
+	if (isfinite(gpsdata->fix.time) != 0)
 	    gpsdata->set |= TIME_SET;
-	if (isnan(gpsdata->fix.ept) == 0)
+	if (isfinite(gpsdata->fix.ept) != 0)
 	    gpsdata->set |= TIMERR_SET;
-	if (isnan(gpsdata->fix.longitude) == 0)
+	if (isfinite(gpsdata->fix.longitude) != 0)
 	    gpsdata->set |= LATLON_SET;
-	if (isnan(gpsdata->fix.altitude) == 0)
+	if (isfinite(gpsdata->fix.altitude) != 0)
 	    gpsdata->set |= ALTITUDE_SET;
-	if (isnan(gpsdata->fix.epx) == 0 && isnan(gpsdata->fix.epy) == 0)
+	if (isfinite(gpsdata->fix.epx) != 0 && isfinite(gpsdata->fix.epy) != 0)
 	    gpsdata->set |= HERR_SET;
-	if (isnan(gpsdata->fix.epv) == 0)
+	if (isfinite(gpsdata->fix.epv) != 0)
 	    gpsdata->set |= VERR_SET;
-	if (isnan(gpsdata->fix.track) == 0)
+	if (isfinite(gpsdata->fix.track) != 0)
 	    gpsdata->set |= TRACK_SET;
-	if (isnan(gpsdata->fix.speed) == 0)
+	if (isfinite(gpsdata->fix.magnetic_track) != 0)
+	    gpsdata->set |= MAGNETIC_TRACK_SET;
+	if (isfinite(gpsdata->fix.speed) != 0)
 	    gpsdata->set |= SPEED_SET;
-	if (isnan(gpsdata->fix.climb) == 0)
+	if (isfinite(gpsdata->fix.climb) != 0)
 	    gpsdata->set |= CLIMB_SET;
-	if (isnan(gpsdata->fix.epd) == 0)
+	if (isfinite(gpsdata->fix.epd) != 0)
 	    gpsdata->set |= TRACKERR_SET;
-	if (isnan(gpsdata->fix.eps) == 0)
+	if (isfinite(gpsdata->fix.eps) != 0)
 	    gpsdata->set |= SPEEDERR_SET;
-	if (isnan(gpsdata->fix.epc) == 0)
+	if (isfinite(gpsdata->fix.epc) != 0)
 	    gpsdata->set |= CLIMBERR_SET;
-	if (isnan(gpsdata->fix.epc) == 0)
+	if (isfinite(gpsdata->fix.epc) != 0)
 	    gpsdata->set |= CLIMBERR_SET;
 	if (gpsdata->fix.mode != MODE_NOT_SEEN)
 	    gpsdata->set |= MODE_SET;

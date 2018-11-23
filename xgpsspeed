@@ -5,7 +5,7 @@
 # and
 # Chen Wei <weichen302@gmx.com> (nautical mode)
 #
-# BSD terms apply: see the file COPYING in the distribution root for details.
+# SPDX-License-Identifier: BSD-2-clause
 
 # This code runs compatibly under Python 2 and 3.x for x >= 2.
 # Preserve this property!
@@ -18,21 +18,30 @@ from math import sqrt
 from math import radians
 from socket import error as SocketError
 
-import gps
-
 import cairo
 
 # Gtk3 imports.  Gtk3 requires the require_version(), which then causes
 # pylint to complain about the subsequent "non-top" imports.
 import gi
 gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk  # pylint: disable=wrong-import-position
-from gi.repository import Gdk  # pylint: disable=wrong-import-position
+from gi.repository import Gtk      # pylint: disable=wrong-import-position
+from gi.repository import Gdk      # pylint: disable=wrong-import-position
 from gi.repository import GObject  # pylint: disable=wrong-import-position
+
+import gps
+
+gps_version = '3.18'
+if gps.__version__ != gps_version:
+    sys.stderr.write("xgpspeed: ERROR: need gps module version %s, got %s\n" %
+                     (gps_version, gps.__version__))
+    sys.exit(1)
 
 
 class Speedometer(Gtk.DrawingArea):
+    "Speedometer class"
+
     def __init__(self, speed_unit=None):
+        "Init Speedometer class"
         Gtk.DrawingArea.__init__(self)
         self.MPH_UNIT_LABEL = 'mph'
         self.KPH_UNIT_LABEL = 'kmh'
@@ -51,7 +60,10 @@ class Speedometer(Gtk.DrawingArea):
 
 
 class LandSpeedometer(Speedometer):
+    "LandSpeedometer class"
+
     def __init__(self, speed_unit=None):
+        "Init LandSpeedometer class"
         Speedometer.__init__(self, speed_unit)
         self.connect('size-allocate', self.on_size_allocate)
         self.width = self.height = 0
@@ -114,10 +126,10 @@ class LandSpeedometer(Speedometer):
                 y + (radius - long_inset) * sin(i * pi / 6.0)
             )
             self.cr.line_to(
-                (x + (radius + (self.cr.get_line_width() / 2))
-                 * cos(i * pi / 6.0)),
-                (y + (radius + (self.cr.get_line_width() / 2))
-                 * sin(i * pi / 6.0))
+                (x + (radius + (self.cr.get_line_width() / 2)) *
+                 cos(i * pi / 6.0)),
+                (y + (radius + (self.cr.get_line_width() / 2)) *
+                 sin(i * pi / 6.0))
             )
             self.cr.select_font_face(
                 'Georgia',
@@ -137,17 +149,17 @@ class LandSpeedometer(Speedometer):
 
             if i in (-8, -7, -6, -5, -4):
                 self.cr.move_to(
-                    (x + (radius - long_inset - (t_width / 2))
-                     * cos(i * pi / 6.0)),
-                    (y + (radius - long_inset - (t_height * 2))
-                     * sin(i * pi / 6.0))
+                    (x + (radius - long_inset - (t_width / 2)) *
+                     cos(i * pi / 6.0)),
+                    (y + (radius - long_inset - (t_height * 2)) *
+                     sin(i * pi / 6.0))
                 )
             elif i in (-2, -1, 0, 2, 1):
                 self.cr.move_to(
-                    (x + (radius - long_inset - (t_width * 1.5))
-                     * cos(i * pi / 6.0)),
-                    (y + (radius - long_inset - (t_height * 2))
-                     * sin(i * pi / 6.0))
+                    (x + (radius - long_inset - (t_width * 1.5)) *
+                     cos(i * pi / 6.0)),
+                    (y + (radius - long_inset - (t_height * 2)) *
+                     sin(i * pi / 6.0))
                 )
             elif i in (-3,):
                 self.cr.move_to(
@@ -239,6 +251,7 @@ class LandSpeedometer(Speedometer):
 
 
 class NauticalSpeedometer(Speedometer):
+    "NauticalSpeedometer class"
     HEADING_SAT_GAP = 0.8
     SAT_SIZE = 10  # radius of the satellite circle in skyview
 
@@ -534,6 +547,8 @@ class NauticalSpeedometer(Speedometer):
 
 
 class Main(object):
+    "Main"
+
     def __init__(self, host='localhost', port=gps.GPSD_PORT, device=None,
                  debug=0, speed_unit=None, maxspeed=0, nautical=False,
                  rotate=0.0, target=""):
@@ -630,9 +645,11 @@ class Main(object):
     def handle_response(self, source, condition):
         if self.daemon.read() == -1:
             self.handle_hangup(source, condition)
-        if self.daemon.data['class'] == 'TPV':
+        if self.daemon.data['class'] == 'VERSION':
+            self.update_version(self.daemon.version)
+        elif self.daemon.data['class'] == 'TPV':
             self.update_speed(self.daemon.data)
-        if self.nautical and self.daemon.data['class'] == 'SKY':
+        elif self.nautical and self.daemon.data['class'] == 'SKY':
             self.update_skyview(self.daemon.data)
 
         return True
@@ -665,6 +682,21 @@ class Main(object):
         if hasattr(data, 'satellites'):
             self.widget.satellites = data.satellites
             self.widget.queue_draw()
+
+    def update_version(self, ver):
+        "Update the Version"
+
+        if ver.release != gps_version:
+            sys.stderr.write("%s: WARNING gpsd version %s different than "
+                             "expected %s\n" %
+                             (sys.argv[0], ver.release, gps_version))
+
+        if ((ver.proto_major != gps.api_major_version or
+             ver.proto_minor != gps.api_minor_version)):
+            sys.stderr.write("%s: WARNING API version %s.%s different than "
+                             "expected %s.%s\n" %
+                             (sys.argv[0], ver.proto_major, ver.proto_minor,
+                              gps.api_major_version, gps.api_minor_version))
 
     def delete_event(self, _widget, _event, _data=None):
         # Someday, handle all cleanup operations here
@@ -699,29 +731,24 @@ class Main(object):
         except KeyboardInterrupt:
             self.window.emit('delete_event', Gdk.Event(Gdk.NOTHING))
 
+
 if __name__ == '__main__':
     import sys
     from os.path import basename
     from optparse import OptionParser
     prog = basename(sys.argv[0])
-    usage = ('%s [-V|--version] [-h|--help] [--debug] [--host] ' +
-             '[--port] [--device] [--speedunits {[mph] [kmh] [knots]}] ' +
-             '[host [:port [:device]]]') % (prog)
+    usage = ('%s [OPTIONS] [host [:port [:device]]]') % (prog)
     epilog = 'BSD terms apply: see the file COPYING in the distribution root' \
              ' for details.'
 
     parser = OptionParser(usage=usage, epilog=epilog)
     parser.add_option(
-        '--host',
-        dest='host',
-        default=None,
-        help='The host to connect. [Default localhost]'
-    )
-    parser.add_option(
-        '--port',
-        dest='port',
-        default=None,
-        help='The port to connect. [Default %s]' % gps.GPSD_PORT
+        '--debug',
+        dest='debug',
+        default=0,
+        action='store',
+        type='int',
+        help='Set level of debug. Must be integer. [Default 0]'
     )
     parser.add_option(
         '--device',
@@ -730,11 +757,17 @@ if __name__ == '__main__':
         help='The device to connect. [Default None]'
     )
     parser.add_option(
-        '--speedunits',
-        dest='speedunits',
-        default='mph',
-        help='The unit of speed. Possible units are: mph, kmh, knots. '
-             '[Default mph]'
+        '--host',
+        dest='host',
+        default=None,
+        help='The host to connect. [Default localhost]'
+    )
+    parser.add_option(
+        '--landspeed',
+        dest='nautical',
+        default=True,
+        action='store_false',
+        help='Enable dashboard-style speedometer.'
     )
     parser.add_option(
         '--maxspeed',
@@ -750,19 +783,10 @@ if __name__ == '__main__':
         help='Enable nautical-style speed and track display.'
     )
     parser.add_option(
-        '--landspeed',
-        dest='nautical',
-        default=True,
-        action='store_false',
-        help='Enable dashboard-style speedometer.'
-    )
-    parser.add_option(
-        '--debug',
-        dest='debug',
-        default=0,
-        action='store',
-        type='int',
-        help='Set level of debug. Must be integer. [Default 0]'
+        '--port',
+        dest='port',
+        default=None,
+        help='The port to connect. [Default %s]' % gps.GPSD_PORT
     )
     parser.add_option(
         '--rotate',
@@ -772,7 +796,24 @@ if __name__ == '__main__':
         type='float',
         help='Rotation of skyview ("up" direction) in degrees. [Default 0]'
     )
+    parser.add_option(
+        '--speedunits',
+        dest='speedunits',
+        default='mph',
+        help='The unit of speed. Possible units are: mph, kmh, knots. '
+             '[Default mph]'
+    )
+    parser.add_option(
+        '-V', '--version',
+        action='store_true',
+        default=False,
+        help='Output version to stderr, then exit'
+    )
     (options, args) = parser.parse_args()
+    if options.version:
+        sys.stderr.write("xgpspeed: Version %s\n" % gps_version)
+        sys.exit(0)
+
     if args:
         arg = args[0].split(':')
         len_arg = len(arg)

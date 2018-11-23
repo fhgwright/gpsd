@@ -1,6 +1,7 @@
 /*
  * A simple command-line exerciser for the library.
  * Not really useful for anything but debugging.
+ * SPDX-License-Identifier: BSD-2-clause
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -58,13 +59,14 @@ int main(int argc, char *argv[])
 	    break;
 	case 's':
 	    (void)
-		printf
-		("Sizes: fix=%zd gpsdata=%zd rtcm2=%zd rtcm3=%zd ais=%zd compass=%zd raw=%zd devices=%zd policy=%zd version=%zd, noise=%zd\n",
+		printf("Sizes: fix=%zd gpsdata=%zd rtcm2=%zd rtcm3=%zd "
+                       "ais=%zd compass=%zd raw=%zd devices=%zd policy=%zd "
+                       "version=%zd, noise=%zd\n",
 		 sizeof(struct gps_fix_t),
 		 sizeof(struct gps_data_t), sizeof(struct rtcm2_t),
 		 sizeof(struct rtcm3_t), sizeof(struct ais_t),
 		 sizeof(struct attitude_t), sizeof(struct rawdata_t),
-		 sizeof(collect.devices), sizeof(struct policy_t),
+		 sizeof(collect.devices), sizeof(struct gps_policy_t),
 		 sizeof(struct version_t), sizeof(struct gst_t));
 	    exit(EXIT_SUCCESS);
 #ifdef CLIENTDEBUG_ENABLE
@@ -111,7 +113,7 @@ int main(int argc, char *argv[])
 			"test_libgps: gps send error: %d, %s\n",
 			errno, gps_errstr(errno));
 	}
-	if (gps_read(&collect) == -1) {
+	if (gps_read(&collect, NULL, 0) == -1) {
 	  (void)fprintf(stderr,
 			"test_libgps: gps read error: %d, %s\n",
 			errno, gps_errstr(errno));
@@ -137,7 +139,7 @@ int main(int argc, char *argv[])
 	    }
 	    collect.set = 0;
 	    (void)gps_send(&collect, buf);
-	    (void)gps_read(&collect);
+	    (void)gps_read(&collect, NULL, 0);
 #ifdef SOCKET_EXPORT_ENABLE
 #ifdef LIBGPS_DEBUG
 	    libgps_dump_state(&collect);

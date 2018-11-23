@@ -34,7 +34,7 @@ has been observed to correctly analyze a message with a nonempty Receiver
 field.
 
 This file is Copyright (c) 2010 by the GPSD project
-BSD terms apply: see the file COPYING in the distribution root for details.
+SPDX-License-Identifier: BSD-2-clause
 
 *****************************************************************************/
 
@@ -94,6 +94,7 @@ void rtcm3_unpack(const struct gps_context_t *context,
     else					\
 	fld.rangediff = temp * PSEUDORANGE_DIFF_RESOLUTION;
 
+    memset(rtcm, 0, sizeof(struct rtcm3_t));
     //assert(ugrab(8) == 0xD3);
     //assert(ugrab(6) == 0x00);
     ugrab(14);

@@ -299,6 +299,9 @@ standard output.</dd>
 <dt><a href="gpsd_json.html">gpsd.5</a></dt> <dd>The request/response
 protocol of the <code>gpsd</code> daemon.</dd>
 
+<dt><a href="gpsdctl.html">gpsdctl.8</a></dt>
+<dd>Tool for sending commands to <code>gpsd</code> over its control socket.</dd>
+
 <dt><a href="gpsinit.html">gpsinit.8</a></dt>
 <dd>Initialize kernel modules for use with <code>gpsd</code> daemon.</dd>
 
@@ -480,7 +483,7 @@ netstumbler. This program is not genetically related to
 <code>gpsd</code>.</p>
 
 <p><a
-href='http://users.hol.gr/~dzach/gpsfeed/index.html'>gpsfeed+</a> is a
+href='http://gpsfeed.sourceforge.net/'>gpsfeed+</a> is a
 program that simulates the output of a GPS in motion, and can be used
 for testing GPS-aware applications.</p>
 

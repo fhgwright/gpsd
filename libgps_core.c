@@ -3,7 +3,7 @@
  * Core portion of client library.  Cals helpers to handle different eports.
  *
  * This file is Copyright (c) 2010 by the GPSD project
- * BSD terms apply: see the file COPYING in the distribution root for details.
+ * SPDX-License-Identifier: BSD-2-clause
  */
 
 /* for vsnprintf() FreeBSD wants __ISO_C_VISIBLE >= 1999 */
@@ -111,8 +111,9 @@ int gps_open(const char *host,
     gpsdata->set = 0;
     gpsdata->status = STATUS_NO_FIX;
     gpsdata->satellites_used = 0;
-    gps_clear_fix(&(gpsdata->fix));
+    gps_clear_att(&(gpsdata->attitude));
     gps_clear_dop(&(gpsdata->dop));
+    gps_clear_fix(&(gpsdata->fix));
 
     return status;
 }
@@ -146,12 +147,18 @@ int gps_close(struct gps_data_t *gpsdata CONDITIONALLY_UNUSED)
 	return status;
 }
 
-int gps_read(struct gps_data_t *gpsdata CONDITIONALLY_UNUSED)
+int gps_read(struct gps_data_t *gpsdata CONDITIONALLY_UNUSED,
+             char *message, int message_len)
 /* read from a gpsd connection */
 {
     int status = -1;
 
     libgps_debug_trace((DEBUG_CALLS, "gps_read() begins\n"));
+    if ((NULL != message) && (0 < message_len)) {
+        /* be sure message is zero length */
+        /* we do not memset() as this is time critical input path */
+        *message = '\0';
+    }
 
 #ifdef SHM_EXPORT_ENABLE
     if (BAD_SOCKET((intptr_t)(gpsdata->gps_fd))) {
@@ -161,7 +168,7 @@ int gps_read(struct gps_data_t *gpsdata CONDITIONALLY_UNUSED)
 
 #ifdef SOCKET_EXPORT_ENABLE
     if (status == -1 && !BAD_SOCKET((intptr_t)(gpsdata->gps_fd))) {
-        status = gps_sock_read(gpsdata);
+        status = gps_sock_read(gpsdata, message, message_len);
     }
 #endif /* SOCKET_EXPORT_ENABLE */
 
@@ -313,6 +320,9 @@ void libgps_dump_state(struct gps_data_t *collect)
 	(void)fprintf(debugfp, "SPEED: %lf\n", collect->fix.speed);
     if (collect->set & TRACK_SET)
 	(void)fprintf(debugfp, "TRACK: track: %lf\n", collect->fix.track);
+    if (collect->set & MAGNETIC_TRACK_SET)
+        (void)fprintf(debugfp, "MAGNETIC_TRACK: magtrack: %lf\n",
+                      collect->fix.magnetic_track);
     if (collect->set & CLIMB_SET)
 	(void)fprintf(debugfp, "CLIMB: climb: %lf\n", collect->fix.climb);
     if (collect->set & STATUS_SET) {

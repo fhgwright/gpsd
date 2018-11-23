@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="ISO-8859-1"?>
 <!--
-This file is Copyright (c) 2010 by the GPSD project
-BSD terms apply: see the file COPYING in the distribution root for details.
+This file is Copyright (c) 2010-2018 by the GPSD project
+SPDX-License-Identifier: BSD-2-clause
 -->
 <!DOCTYPE refentry PUBLIC
    "-//OASIS//DTD DocBook XML V4.1.2//EN"
@@ -9,7 +9,7 @@ BSD terms apply: see the file COPYING in the distribution root for details.
 <!ENTITY gpsdsock	 "/var/run/gpsd.sock">
 ]>
 <refentry id='gpsd_json.5'>
-<refentryinfo><date>28 Aug 2011</date></refentryinfo>
+<refentryinfo><date>17 Jun 2018</date></refentryinfo>
 <refmeta>
 <refentrytitle>gpsd_json</refentrytitle>
 <manvolnum>5</manvolnum>
@@ -192,6 +192,12 @@ Others may be reported or not depending on the fix quality.</para>
         <entry>Course over ground, degrees from true north.</entry>
 </row>
 <row>
+	<entry>magtrack</entry>
+	<entry>No</entry>
+	<entry>numeric</entry>
+        <entry>Course over ground, degrees magnetic.</entry>
+</row>
+<row>
 	<entry>speed</entry>
 	<entry>No</entry>
 	<entry>numeric</entry>
@@ -221,6 +227,54 @@ Others may be reported or not depending on the fix quality.</para>
 	<entry>No</entry>
 	<entry>numeric</entry>
         <entry>Climb/sink error estimate in meters/sec, 95% confidence.</entry>
+</row>
+<row>
+	<entry>ecefx</entry>
+	<entry>No</entry>
+	<entry>numeric</entry>
+        <entry>ECEF X position in meters.</entry>
+</row>
+<row>
+	<entry>ecefy</entry>
+	<entry>No</entry>
+	<entry>numeric</entry>
+        <entry>ECEF Y position in meters.</entry>
+</row>
+<row>
+	<entry>ecefz</entry>
+	<entry>No</entry>
+	<entry>numeric</entry>
+        <entry>ECEF Z position in meters.</entry>
+</row>
+<row>
+	<entry>ecefpAcc</entry>
+	<entry>No</entry>
+	<entry>numeric</entry>
+        <entry>ECEF position error in meters.</entry>
+</row>
+<row>
+	<entry>ecefvx</entry>
+	<entry>No</entry>
+	<entry>numeric</entry>
+        <entry>ECEF X velocity in meters/second.</entry>
+</row>
+<row>
+	<entry>ecefvy</entry>
+	<entry>No</entry>
+	<entry>numeric</entry>
+        <entry>ECEF Y velocity in meters/second.</entry>
+</row>
+<row>
+	<entry>ecefvz</entry>
+	<entry>No</entry>
+	<entry>numeric</entry>
+        <entry>ECEF Z velocity in meters/second.</entry>
+</row>
+<row>
+	<entry>ecefvAcc</entry>
+	<entry>No</entry>
+	<entry>numeric</entry>
+        <entry>ECEF velocity error in meters/second.</entry>
 </row>
 
 </tbody>
@@ -276,7 +330,7 @@ yet, only the "class" field will reliably be present.</para>
 <row>
 	<entry>time</entry>
 	<entry>No</entry>
-	<entry>numeric</entry>
+	<entry>string</entry>
         <entry>Time/date stamp in ISO8601 format, UTC. May have a
 	fractional part of up to .001sec precision.</entry>
 </row>
@@ -465,9 +519,9 @@ will assert the SATELLITE_SET bit in the top-level set member.</para>
 <row>
 	<entry>time</entry>
 	<entry>No</entry>
-	<entry>numeric</entry>
-        <entry>Seconds since the Unix epoch, UTC. May have a
-fractional part of up to .001sec precision.</entry>
+	<entry>string</entry>
+        <entry>Time/date stamp in ISO8601 format, UTC. May have a
+	fractional part of up to .001sec precision.</entry>
 </row>
 
 <row>
@@ -575,8 +629,8 @@ may be reported or not depending on the specific device type.</para>
 <row>
 	<entry>time</entry>
 	<entry>No</entry>
-	<entry>numeric</entry>
-        <entry>Seconds since the Unix epoch, UTC. May have a
+	<entry>string</entry>
+        <entry>Time/date stamp in ISO8601 format, UTC. May have a
 	fractional part of up to .001sec precision.</entry>
 </row>
 <row>
