@@ -51,7 +51,7 @@ from gi.repository import Pango  # pylint: disable=wrong-import-position
 import gps
 import gps.clienthelpers
 
-gps_version = '3.18'
+gps_version = '3.18.1'
 if gps.__version__ != gps_version:
     sys.stderr.write("xgps: ERROR: need gps module version %s, got %s\n" %
                      (gps_version, gps.__version__))
@@ -261,12 +261,14 @@ class SkyView(Gtk.DrawingArea):
         self.center_y = y
         self.radius = r
 
-    def set_color(self, spec):
-        "Set foreground color for drawing."
-        gdkcolor = Gdk.color_parse(spec)
-        r = gdkcolor.red / 65535.0
-        g = gdkcolor.green / 65535.0
-        b = gdkcolor.blue / 65535.0
+    def set_color(self, r, g, b):
+        """Set foreground color for drawing. rgb: 0 to 255"""
+
+        # Gdk.color_parse() deprecated in GDK 3.14
+        # gdkcolor = Gdk.color_parse(spec)
+        r = r / 255.0
+        g = g / 255.0
+        b = b / 255.0
         self.cr.set_source_rgb(r, g, b)
 
     def draw_circle(self, x, y, radius, filled=False):
@@ -443,16 +445,19 @@ class SkyView(Gtk.DrawingArea):
 
             (x, y) = self.pol2cart(sat.az, sat.el)
             # colorize by signal to noise ratio
-            if sat.ss < 10:
-                self.set_color("Gray")
+            # RINEX 3 uses 9 steps: 1 to 9.  Corresponding to
+            # <12, 12-17, 18-23, 24-29, 30-35, 36-41, 42-47, 48-53, >= 54
+            if sat.ss < 12:
+                self.set_color(190, 190, 190)      # gray
             elif sat.ss < 30:
-                self.set_color("Red")
-            elif sat.ss < 35:
-                self.set_color("Yellow")
-            elif sat.ss < 40:
-                self.set_color("Green3")
+                self.set_color(255, 0, 0)          # red
+            elif sat.ss < 36:
+                # RINEX 3 says 30 is "threshold for good tracking"
+                self.set_color(255, 255, 0)        # yellow
+            elif sat.ss < 42:
+                self.set_color(0, 205, 0)          # green3
             else:
-                self.set_color("Green1")
+                self.set_color(0, 255, 180)        # green and some blue
 
             # shape by constellation
             constellation = gnssid_str(sat)
@@ -843,7 +848,16 @@ class Base(object):
         viewframe = Gtk.Frame(label="Skyview")
         self.satbox.add(viewframe)
         self.skyview = SkyView(self.rotate)
-        self.skyview.set_property('events', Gdk.EventMask.POINTER_MOTION_MASK)
+        try:
+            # mouseovers fail with remote DISPLAY
+            self.skyview.set_property('events',
+                                      Gdk.EventMask.POINTER_MOTION_MASK)
+        except NotImplementedError:
+            # keep going anyway, w/o popups
+            sys.stderr.write("xgps: WARNING: failed to grab mouse events, "
+                             "popups disabled\n")
+            pass
+
         viewframe.add(self.skyview)
 
         self.rawdisplay = Gtk.Entry()
